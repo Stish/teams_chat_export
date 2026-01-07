@@ -73,6 +73,12 @@ class TeamsExporter:
         self.meeting_full_member_lists: Dict[str, str] = {}
         self.channels_by_team: Dict[str, List[Tuple[str, str, str]]] = {}
         self.channel_messages: Dict[Tuple[str, str], List[Dict]] = {}
+        self.chat_message_counts: Dict[str, Dict[str, int]] = {
+            'oneonone': {},
+            'group': {},
+            'meeting': {}
+        }
+        self.channel_message_counts: Dict[Tuple[str, str], int] = {}
         
         # Setup output directory
         self._setup_output_directory()
@@ -403,8 +409,14 @@ class TeamsExporter:
         print(f'\r#   Fetching messages for chat: {chat_name}...({len(messages)} messages)')
         return messages
     
-    def _generate_sidebar_section(self, section_id: str, title: str, chats: Dict[str, str], 
-                                 member_lists: Optional[Dict[str, str]] = None) -> str:
+    def _generate_sidebar_section(
+        self,
+        section_id: str,
+        title: str,
+        chats: Dict[str, str],
+        member_lists: Optional[Dict[str, str]] = None,
+        message_counts: Optional[Dict[str, int]] = None
+    ) -> str:
         """
         Generate HTML for a sidebar section.
         
@@ -417,19 +429,27 @@ class TeamsExporter:
         Returns:
             str: HTML content for the sidebar section
         """
+        header_title = title
+        if message_counts is not None:
+            total_count = sum(message_counts.values())
+            header_title = f"{title} ({total_count})"
+
         html = f'''
-  <div class="sidebar-section-header" onclick="toggleSection('{section_id}')">{title}</div>
+  <div class="sidebar-section-header" onclick="toggleSection('{section_id}')">{header_title}</div>
   <div id="{section_id}" class="sidebar-section-content" style="display:none;">
 '''
         
         for chat_name, chat_id in chats.items():
-            safe_chat_name = urllib.parse.quote(chat_name, safe='')
+            safe_chat_name = urllib.parse.quote(str(chat_name or ''), safe='')
             tooltip = ""
             
             if member_lists and chat_name in member_lists:
                 tooltip = f'title="{member_lists[chat_name]}"'
             
-            html += f'''    <a href="#" onclick="showChat('{safe_chat_name}')" data-chat-name="{chat_name}" {tooltip}>{chat_name}</a>
+            count_suffix = ''
+            if message_counts is not None:
+                count_suffix = f" ({message_counts.get(chat_name, 0)})"
+            html += f'''    <a href="#" onclick="showChat('{safe_chat_name}')" data-chat-name="{chat_name}" {tooltip}>{chat_name}{count_suffix}</a>
 '''
         
         html += '  </div>\n'
@@ -494,7 +514,7 @@ class TeamsExporter:
             return ""
     
     def _generate_chat_html(self, chat_name: str, chat_id: str, chat_type: str, 
-                           member_lists: Optional[Dict[str, str]] = None) -> str:
+                           member_lists: Optional[Dict[str, str]] = None) -> Tuple[str, int]:
         """
         Generate HTML for a chat section.
         
@@ -505,9 +525,9 @@ class TeamsExporter:
             member_lists (Optional[Dict[str, str]]): Member lists for display
             
         Returns:
-            str: HTML content for the chat section
+            Tuple[str, int]: HTML content for the chat section and message count
         """
-        safe_chat_name = urllib.parse.quote(chat_name, safe='')
+        safe_chat_name = urllib.parse.quote(str(chat_name or ''), safe='')
         html = f'<div id="{safe_chat_name}" class="chat-section">\n'
         
         # Add chat header
@@ -526,7 +546,7 @@ class TeamsExporter:
             ignored_html = f'<div class="clearfix"><div class="message theirs"><div class="meta">System • {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div><div class="text">This chat has been ignored due to configuration settings.<br><br>Chat: {chat_name}<br><br>To enable message fetching, remove this chat from the IGNORED_CHATS list in config.py.</div></div></div>'
             html += ignored_html
             html += '</div>\n'
-            return html
+            return html, 0
         
         # Fetch and process messages
         messages = self._fetch_chat_messages(chat_name, chat_id)
@@ -569,14 +589,14 @@ class TeamsExporter:
         
         # Generate HTML for each valid message
         for msg in filtered_messages:
-            message_html = self._generate_message_html(msg, 'chat')
+            message_html = self._generate_message_html(msg, chat_type)
             if message_html.strip():  # Only add non-empty HTML
                 html += message_html
-        
+
         html += '</div>\n'
-        return html
-    
-    def _generate_channel_html(self, team_name: str, channel_name: str, messages: List[Dict]) -> str:
+        return html, len(filtered_messages)
+
+    def _generate_channel_html(self, team_name: str, channel_name: str, messages: List[Dict]) -> Tuple[str, int]:
         """
         Generate HTML for a channel section.
         
@@ -586,9 +606,9 @@ class TeamsExporter:
             messages (List[Dict]): List of message objects
             
         Returns:
-            str: HTML content for the channel section
+            Tuple[str, int]: HTML content for the channel section and message count
         """
-        safe_channel_id = urllib.parse.quote(f"{team_name}|||{channel_name}", safe='')
+        safe_channel_id = urllib.parse.quote(f"{team_name or ''}|||{channel_name or ''}", safe='')
         html = f'<div id="{safe_channel_id}" class="chat-section">\n'
         html += f'  <h2 style="margin-top:0">{team_name} / {channel_name}</h2>\n'
         
@@ -640,7 +660,7 @@ class TeamsExporter:
                 html += message_html
         
         html += '</div>\n'
-        return html
+        return html, len(filtered_messages)
     
     def generate_html_export(self):
         """Generate the complete HTML export."""
@@ -648,47 +668,75 @@ class TeamsExporter:
         
         # Start with the base template
         export_html = html_content
-        
-        # Add sidebar sections
-        export_html += '<div class="sidebar-section">\n'
-        
-        # One-on-one chats
-        export_html += self._generate_sidebar_section(
-            'oneonone-section', '▶ One on One Chats', self.chats_one_on_one
+
+        # Reset message count tracking
+        self.chat_message_counts = {'oneonone': {}, 'group': {}, 'meeting': {}}
+        self.channel_message_counts = {}
+
+        # Build chat sections first to capture message counts
+        print('##  Processing chat messages')
+        chat_sections_html = ''
+        for chat_name, chat_id in self.chats_one_on_one.items():
+            chat_html, count = self._generate_chat_html(chat_name, chat_id, 'oneonone')
+            self.chat_message_counts['oneonone'][chat_name] = count
+            chat_sections_html += chat_html
+
+        for chat_name, chat_id in self.chats_group.items():
+            chat_html, count = self._generate_chat_html(chat_name, chat_id, 'group', self.group_full_member_lists)
+            self.chat_message_counts['group'][chat_name] = count
+            chat_sections_html += chat_html
+
+        for chat_name, chat_id in self.chats_meeting.items():
+            chat_html, count = self._generate_chat_html(chat_name, chat_id, 'meeting', self.meeting_full_member_lists)
+            self.chat_message_counts['meeting'][chat_name] = count
+            chat_sections_html += chat_html
+
+        channel_sections_html = ''
+        for (team_name, channel_name), messages in self.channel_messages.items():
+            channel_html, count = self._generate_channel_html(team_name, channel_name, messages)
+            self.channel_message_counts[(team_name, channel_name)] = count
+            channel_sections_html += channel_html
+
+        # Build sidebar with counts
+        sidebar_html = '<div class="sidebar-section">\n'
+        sidebar_html += self._generate_sidebar_section(
+            'oneonone-section', '▶ One on One Chats', self.chats_one_on_one, None, self.chat_message_counts['oneonone']
         )
-        
-        # Group chats
-        export_html += self._generate_sidebar_section(
-            'group-section', '▶ Group Chats', self.chats_group, self.group_full_member_lists
+        sidebar_html += self._generate_sidebar_section(
+            'group-section', '▶ Group Chats', self.chats_group, self.group_full_member_lists, self.chat_message_counts['group']
         )
-        
-        # Meeting chats
-        export_html += self._generate_sidebar_section(
-            'meeting-section', '▶ Meeting Chats', self.chats_meeting
+        sidebar_html += self._generate_sidebar_section(
+            'meeting-section', '▶ Meeting Chats', self.chats_meeting, self.meeting_full_member_lists, self.chat_message_counts['meeting']
         )
-        
-        # Channel chats
-        export_html += '''  <div class="sidebar-section-header" onclick="toggleSection('channel-section')">▶ Channel Chats</div>
-  <div id="channel-section" class="sidebar-section-content" style="display:none;">
-'''
-        
-        # Add team sections
+
+        total_channel_messages = sum(self.channel_message_counts.values())
+        channel_header_title = f"▶ Channel Chats ({total_channel_messages})"
+        sidebar_html += f"  <div class=\"sidebar-section-header\" onclick=\"toggleSection('channel-section')\">{channel_header_title}</div>\n"
+        sidebar_html += '  <div id="channel-section" class="sidebar-section-content" style="display:none;">\n'
+
         for team_name, channels in self.channels_by_team.items():
-            safe_team_id = urllib.parse.quote(team_name, safe='')
-            export_html += f'    <div class="sidebar-section-header" onclick="toggleSection(\'team-{safe_team_id}\')">▶&nbsp;&nbsp;&nbsp;&nbsp;{team_name}</div>\n'
-            export_html += f'    <div id="team-{safe_team_id}" class="sidebar-section-content" style="display:none;">\n'
-            
+            safe_team_id = urllib.parse.quote(str(team_name or ''), safe='')
+            team_count = sum(self.channel_message_counts.get((team_name, ch_name), 0) for ch_name, _, _ in channels)
+            team_header = f"▶&nbsp;&nbsp;&nbsp;&nbsp;{team_name} ({team_count})"
+            sidebar_html += f'    <div class="sidebar-section-header" onclick="toggleSection(\'team-{safe_team_id}\')">{team_header}</div>\n'
+            sidebar_html += f'    <div id="team-{safe_team_id}" class="sidebar-section-content" style="display:none;">\n'
+
             for channel_name, team_id, channel_id in channels:
-                safe_channel_id = urllib.parse.quote(f"{team_name}|||{channel_name}", safe='')
-                export_html += f'      <a href="#" onclick="showChat(\'{safe_channel_id}\')" data-chat-name="{channel_name}">{channel_name}</a>\n'
-            
-            export_html += '    </div>\n'
-        
-        export_html += '  </div>\n'
+                safe_channel_id = urllib.parse.quote(f"{team_name or ''}|||{channel_name or ''}", safe='')
+                channel_count = self.channel_message_counts.get((team_name, channel_name), 0)
+                count_suffix = f" ({channel_count})"
+                sidebar_html += f'      <a href="#" onclick="showChat(\'{safe_channel_id}\')" data-chat-name="{channel_name}">{channel_name}{count_suffix}</a>\n'
+
+            sidebar_html += '    </div>\n'
+
+        sidebar_html += '  </div>\n'
+        sidebar_html += '</div>\n'
+
+        export_html += sidebar_html
         export_html += '</div>\n'
         export_html += '</div>\n'
         export_html += '</div><div class="content">\n'
-        
+
         # Add cover page
         export_html += '''  <div id="cover-page" style="display: block; text-align: center; padding: 60px 20px 40px 20px; color: #23272e;">
     <h1 style="font-size:2.5em;margin-bottom:0.2em;">Teams Chat Export</h1>
@@ -706,26 +754,11 @@ class TeamsExporter:
     <div style="margin-top:2em;font-size:0.9em;color:#aaa;">Powered by Teams Chat Export Script <!--SCRIPT_VERSION--></div>
   </div>
 '''
-        
-        # Add chat content
-        print('##  Processing chat messages')
-        
-        # Process one-on-one chats
-        for chat_name, chat_id in self.chats_one_on_one.items():
-            export_html += self._generate_chat_html(chat_name, chat_id, 'oneonone')
-        
-        # Process group chats
-        for chat_name, chat_id in self.chats_group.items():
-            export_html += self._generate_chat_html(chat_name, chat_id, 'group', self.group_full_member_lists)
-        
-        # Process meeting chats
-        for chat_name, chat_id in self.chats_meeting.items():
-            export_html += self._generate_chat_html(chat_name, chat_id, 'meeting', self.meeting_full_member_lists)
-        
-        # Process channel messages
-        for (team_name, channel_name), messages in self.channel_messages.items():
-            export_html += self._generate_channel_html(team_name, channel_name, messages)
-        
+
+        # Append chat and channel content (already processed)
+        export_html += chat_sections_html
+        export_html += channel_sections_html
+
         # Replace placeholders
         export_date = datetime.now().strftime("%Y-%m-%d at %H:%M:%S")
         export_html = export_html.replace("<!--EXPORT_DATE-->", f"{export_date} with {self.script_version}")

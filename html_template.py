@@ -311,6 +311,7 @@ document.addEventListener("DOMContentLoaded", function() {
     function updateSearch() {
         const query = input.value.toLowerCase();
         const imageOnly = imageOnlyCheckbox.checked;
+        const isFiltering = query !== "" || imageOnly;
 
         /**
          * Process a specific chat section and update match counts
@@ -319,52 +320,87 @@ document.addEventListener("DOMContentLoaded", function() {
          */
         function processSection(sectionId, sectionName) {
             const section = document.getElementById(sectionId);
+            if (!section) return;
+            
             const links = section.querySelectorAll('a');
             let totalMatches = 0;
 
             links.forEach(link => {
-                const chatId = link.getAttribute("onclick").match(/'(.*?)'/)[1];
-                const sectionDiv = document.getElementById(chatId);
-                let matchCount = 0;
+                // Store original text on first run
+                if (!link.dataset.originalText) {
+                    link.dataset.originalText = link.innerText;
+                }
+                
+                try {
+                    const chatId = link.getAttribute("onclick").match(/'(.*?)'/)[1];
+                    const sectionDiv = document.getElementById(chatId);
+                    if (!sectionDiv) return;
+                    
+                    let matchCount = 0;
 
-                sectionDiv.querySelectorAll(".message").forEach(msg => {
-                    // Cache lowercased text once
-                    if (!msg.dataset.lowerText) {
-                        msg.dataset.lowerText = msg.innerText.toLowerCase();
-                    }
-                    const hasImg = messageHasImage(msg);
-                    const matchText = msg.dataset.lowerText.includes(query);
-                    let show = false;
-                    if (imageOnly) {
-                        if (query === "") {
-                            show = hasImg;
+                    sectionDiv.querySelectorAll(".message").forEach(msg => {
+                        // Cache lowercased text once
+                        if (!msg.dataset.lowerText) {
+                            msg.dataset.lowerText = msg.innerText.toLowerCase();
+                        }
+                        const hasImg = messageHasImage(msg);
+                        const matchText = msg.dataset.lowerText.includes(query);
+                        let show = false;
+                        if (imageOnly) {
+                            if (query === "") {
+                                show = hasImg;
+                            } else {
+                                show = hasImg && matchText;
+                            }
                         } else {
-                            show = hasImg && matchText;
+                            show = (query === "" || matchText);
+                        }
+                        msg.style.display = show ? "block" : "none";
+                        if (show) matchCount++;
+                    });
+
+                    if (isFiltering) {
+                        // When filtering is active, show filtered count or hide
+                        if (matchCount > 0) {
+                            link.style.display = "";
+                            link.innerText = link.getAttribute("data-chat-name") + ` (${matchCount})`;
+                        } else {
+                            link.style.display = "none";
                         }
                     } else {
-                        show = (query === "" || matchText);
+                        // When no filtering, restore original text with permanent counts
+                        link.style.display = "";
+                        link.innerText = link.dataset.originalText;
                     }
-                    msg.style.display = show ? "block" : "none";
-                    if (show) matchCount++;
-                });
 
-                if (matchCount > 0) {
-                    link.style.display = "";
-                    link.innerText = link.getAttribute("data-chat-name") + (matchCount > 0 ? ` (${matchCount})` : "");
-                } else {
-                    link.style.display = "none";
+                    totalMatches += matchCount;
+                } catch (e) {
+                    console.error("Error processing link:", e);
                 }
-
-                totalMatches += matchCount;
             });
 
+            // Store original header text
             const header = section.previousElementSibling;
+            if (!header) return;
+            
+            if (!header.dataset.originalText) {
+                header.dataset.originalText = header.innerText;
+            }
+            
             let arrow = header.innerText.trim().charAt(0);
             if (arrow !== '▶' && arrow !== '▼') arrow = '▶';
-            if (totalMatches > 0) {
-                header.innerText = `${arrow} ${sectionName} (${totalMatches})`;
+            
+            if (isFiltering) {
+                // When filtering, show filtered count
+                if (totalMatches > 0) {
+                    header.innerText = `${arrow} ${sectionName} (${totalMatches})`;
+                } else {
+                    header.innerText = `${arrow} ${sectionName}`;
+                }
             } else {
-                header.innerText = `${arrow} ${sectionName}`;
+                // When no filtering, restore original text
+                const origText = header.dataset.originalText;
+                header.innerText = origText.replace(/^[▶▼]\s*/, `${arrow} `);
             }
         }
 
@@ -378,11 +414,21 @@ document.addEventListener("DOMContentLoaded", function() {
         let totalChannelMatches = 0;
 
         teamHeaders.forEach(header => {
+            // Store original header text
+            if (!header.dataset.originalText) {
+                header.dataset.originalText = header.innerText;
+            }
+            
             const teamDiv = header.nextElementSibling;
             const channelLinks = teamDiv ? teamDiv.querySelectorAll('a') : [];
             let teamMatchCount = 0;
 
             channelLinks.forEach(link => {
+                // Store original link text
+                if (!link.dataset.originalText) {
+                    link.dataset.originalText = link.innerText;
+                }
+                
                 const chatId = link.getAttribute("onclick").match(/'(.*?)'/)[1];
                 const sectionDiv = document.getElementById(chatId);
                 let matchCount = 0;
@@ -409,23 +455,43 @@ document.addEventListener("DOMContentLoaded", function() {
                     });
                 }
 
-                if (matchCount > 0) {
-                    link.style.display = "";
-                    link.innerText = link.getAttribute("data-chat-name") + (matchCount > 0 ? ` (${matchCount})` : "");
+                if (isFiltering) {
+                    // When filtering is active, show filtered count
+                    if (matchCount > 0) {
+                        link.style.display = "";
+                        link.innerText = link.getAttribute("data-chat-name") + ` (${matchCount})`;
+                    } else {
+                        link.style.display = "none";
+                    }
                 } else {
-                    link.style.display = "none";
+                    // When no filtering, restore original text with permanent counts
+                    link.style.display = "";
+                    link.innerText = link.dataset.originalText;
                 }
 
                 teamMatchCount += matchCount;
             });
 
-            const origName = header.innerText.replace(/^[▶▼]\s*/, '').replace(/\s*\(\d+\)$/, '');
+            // Update team header and visibility
             let arrow = header.innerText.trim().charAt(0);
             if (arrow !== '▶' && arrow !== '▼') arrow = '▶';
-            if (teamMatchCount > 0) {
-                header.innerText = `${arrow} ${origName} (${teamMatchCount})`;
+            const origText = header.dataset.originalText.replace(/^[▶▼]\s*/, '').replace(/\s*\(\d+\)$/, '');
+            
+            if (isFiltering) {
+                // When filtering, show filtered count and hide team if no matches
+                if (teamMatchCount > 0) {
+                    header.style.display = "";
+                    if (teamDiv) teamDiv.style.display = "";
+                    header.innerText = `${arrow} ${origText} (${teamMatchCount})`;
+                } else {
+                    header.style.display = "none";
+                    if (teamDiv) teamDiv.style.display = "none";
+                }
             } else {
-                header.innerText = `${arrow} ${origName}`;
+                // When no filtering, show team and restore original text
+                header.style.display = "";
+                if (teamDiv) teamDiv.style.display = "";
+                header.innerText = header.dataset.originalText.replace(/^[▶▼]\s*/, `${arrow} `);
             }
 
             totalChannelMatches += teamMatchCount;
@@ -433,13 +499,26 @@ document.addEventListener("DOMContentLoaded", function() {
 
         const channelHeader = channelSection ? channelSection.previousElementSibling : null;
         if (channelHeader) {
+            // Store original channel header text
+            if (!channelHeader.dataset.originalText) {
+                channelHeader.dataset.originalText = channelHeader.innerText;
+            }
+            
             let arrow = channelHeader.innerText.trim().charAt(0);
             if (arrow !== '▶' && arrow !== '▼') arrow = '▶';
             const name = "Channel Chats";
-            if (totalChannelMatches > 0) {
-                channelHeader.innerText = `${arrow} ${name} (${totalChannelMatches})`;
+            
+            if (isFiltering) {
+                // When filtering, show filtered count
+                if (totalChannelMatches > 0) {
+                    channelHeader.innerText = `${arrow} ${name} (${totalChannelMatches})`;
+                } else {
+                    channelHeader.innerText = `${arrow} ${name}`;
+                }
             } else {
-                channelHeader.innerText = `${arrow} ${name}`;
+                // When no filtering, restore original text
+                const origText = channelHeader.dataset.originalText;
+                channelHeader.innerText = origText.replace(/^[▶▼]\s*/, `${arrow} `);
             }
         }
     }

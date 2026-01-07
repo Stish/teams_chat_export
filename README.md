@@ -1,6 +1,6 @@
 # Microsoft Teams Chat Export
 
-A powerful Python script that exports Microsoft Teams chats, group conversations, meetings, and channel messages to a single, searchable HTML file with embedded images and intuitive navigation.
+A Python script that exports Microsoft Teams chats, group conversations, meetings, and channel messages to a single, searchable HTML file with embedded images and intuitive navigation.
 
 ## 📋 Table of Contents
 
@@ -242,6 +242,17 @@ Real-time updates show:
 - Message counts for each conversation
 - Export progress and completion status
 
+### Search and Filtering
+
+The HTML export includes advanced search capabilities:
+- **Real-time Search**: Filter messages by text across all conversations
+- **Image-only Filter**: Toggle to show only messages containing images
+- **Combined Filtering**: Search and image filter work together (AND logic)
+- **Live Message Counts**: See message counts update as you filter
+- **Smart Visibility**: Chats/channels with no matches automatically hide while filtering
+- **Consistent Behavior**: All chat types (1-on-1, group, meetings, channels) support unified filtering
+- **Restore Counts**: Original permanent message counts restore when clearing filters
+
 ### Error Handling
 
 The script handles:
@@ -332,7 +343,7 @@ This project is provided as-is for educational and personal use. Please ensure y
 
 ---
 
-**Version**: v0.1.2  
-**Last Updated**: July 2025  
+**Version**: v0.1.3  
+**Last Updated**: January 2026  
 **Tested with**: Microsoft Teams Web, Desktop App  
 **Python Compatibility**: 3.6+

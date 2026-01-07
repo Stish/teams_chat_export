@@ -142,7 +142,7 @@ def sort_chats_by_name(chat_list):
     Returns:
         list of tuple: Sorted list of (chat_name, chat_id) tuples, ordered alphabetically by chat_name.
     """
-    return sorted(chat_list, key=lambda x: x[0].lower())
+    return sorted(chat_list, key=lambda x: (x[0] or "").lower())
 
 
 def process_message_content(raw_content, message_id, access_token, image_folder):
