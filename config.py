@@ -5,7 +5,7 @@ This file contains all configuration parameters and constants used by the Teams 
 Modify these values according to your needs.
 
 Author: Alexander Wegner
-Version: v0.1.1
+Version: v0.1.5
 """
 
 # =============================================================================
@@ -35,7 +35,7 @@ IMAGE_FOLDER = 'img'
 # =============================================================================
 
 # Script version
-SCRIPT_VERSION = 'v0.1.2'
+SCRIPT_VERSION = 'v0.1.5'
 
 # =============================================================================
 # API CONFIGURATION
@@ -43,15 +43,6 @@ SCRIPT_VERSION = 'v0.1.2'
 
 # Microsoft Graph API endpoints
 GRAPH_API_BASE_URL = 'https://graph.microsoft.com/v1.0'
-
-# API request headers
-def get_api_headers(access_token):
-    """Get standard headers for Microsoft Graph API requests."""
-    return {
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json',
-        'ConsistencyLevel': 'eventual'
-    }
 
 # =============================================================================
 # PAGINATION CONFIGURATION
@@ -63,13 +54,6 @@ ITEMS_PER_PAGE = 50
 # =============================================================================
 # HTML GENERATION CONFIGURATION
 # =============================================================================
-
-# Navigation buttons HTML
-NAVIGATION_BUTTONS_HTML = '''
-<!-- Navigation buttons -->
-<button id="scroll-up-btn" class="nav-button" title="Scroll to top">↑</button>
-<button id="scroll-down-btn" class="nav-button" title="Scroll to bottom">↓</button>
-'''
 
 # Output HTML file name
 OUTPUT_HTML_FILE = 'index.html'
@@ -92,6 +76,25 @@ MESSAGE_TYPE_USER = 'message'
 
 # Maximum number of member names to display in group chat names
 MAX_MEMBERS_IN_CHAT_NAME = 3
+
+# =============================================================================
+# MESSAGE LIMIT CONFIGURATION (FOR TESTING/DEVELOPMENT)
+# =============================================================================
+
+# Limit the number of messages fetched per chat (None = no limit, fetch all)
+# Set to a low number (e.g., 50, 100) for faster testing
+# Set to None for production use to fetch all messages
+MESSAGES_LIMIT_PER_CHAT = None  # Examples: 50, 100, 500, or None for unlimited
+
+# Limit the total number of chats to process (None = no limit, process all)
+# Set to a low number (e.g., 5, 10) for faster testing
+# Set to None for production use to process all chats
+CHATS_LIMIT = None  # Examples: 5, 10, 20, or None for unlimited
+
+# Limit the number of channels to process per team (None = no limit)
+# For quick testing you can set a small number (e.g., 3 or 5)
+# If left as None, the script will fall back to CHATS_LIMIT when set
+CHANNELS_LIMIT_PER_TEAM = None # Examples: 3, 5, 10, or None for unlimited
 
 # =============================================================================
 # IGNORE LIST CONFIGURATION

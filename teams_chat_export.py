@@ -22,7 +22,7 @@ Usage:
     python teams_chat_export.py
 
 Author: Alexander Wegner
-Version: v0.1.1
+Version: v0.1.5
 """
 
 import os
@@ -37,13 +37,14 @@ import requests
 # Import local modules
 from config import (
     ACCESS_TOKEN, OUTPUT_FOLDER, IMAGE_FOLDER, SCRIPT_VERSION,
-    GRAPH_API_BASE_URL, ITEMS_PER_PAGE, OUTPUT_HTML_FILE, NAVIGATION_BUTTONS_HTML,
+    GRAPH_API_BASE_URL, ITEMS_PER_PAGE, OUTPUT_HTML_FILE,
     CHAT_TYPE_ONE_ON_ONE, CHAT_TYPE_GROUP, CHAT_TYPE_MEETING, MESSAGE_TYPE_USER,
-    MAX_MEMBERS_IN_CHAT_NAME, IGNORED_CHANNELS, IGNORED_CHATS, get_api_headers
+    MAX_MEMBERS_IN_CHAT_NAME, IGNORED_CHANNELS, IGNORED_CHATS,
+    MESSAGES_LIMIT_PER_CHAT, CHATS_LIMIT, CHANNELS_LIMIT_PER_TEAM
 )
-from html_template import html_content
+from html_template import html_content, NAVIGATION_BUTTONS_HTML
 from teams_utils import (
-    chat_has_messages, sort_chats_by_name, process_message_content,
+    get_api_headers, chat_has_messages, sort_chats_by_name, process_message_content,
     format_timestamp, create_member_list_display, format_member_list_for_display,
     validate_message_content
 )
@@ -82,6 +83,10 @@ class TeamsExporter:
         
         # Setup output directory
         self._setup_output_directory()
+        
+        # Statistics tracking
+        self.message_dates = []  # Track all message dates
+        self.participant_message_counts = {}  # Track message count per participant
     
     def _fetch_user_display_name(self) -> str:
         """
@@ -143,7 +148,7 @@ class TeamsExporter:
             print("   Please check your access token and network connection")
             return False
     
-    def _make_paginated_request(self, url: str, progress_callback=None, context="") -> List[Dict]:
+    def _make_paginated_request(self, url: str, progress_callback=None, context="", limit=None) -> List[Dict]:
         """
         Make paginated requests to Microsoft Graph API.
         
@@ -151,6 +156,7 @@ class TeamsExporter:
             url (str): The initial API URL
             progress_callback (callable): Optional callback for progress updates
             context (str): Context string for progress display
+            limit (int): Optional limit on number of items to fetch (None = no limit)
             
         Returns:
             List[Dict]: Combined results from all pages
@@ -168,6 +174,11 @@ class TeamsExporter:
                     # Call progress callback if provided
                     if progress_callback:
                         progress_callback(len(all_items), context)
+                    
+                    # Check if limit reached
+                    if limit and len(all_items) >= limit:
+                        all_items = all_items[:limit]
+                        break
                     
                     url = data.get('@odata.nextLink')
                 else:
@@ -193,10 +204,50 @@ class TeamsExporter:
         try:
             response = requests.get(url, headers=self.headers)
             if response.status_code == 200:
-                return response.json().get('value', [])
+                members = response.json().get('value', [])
+                print(f'  ✅ Member API returned {len(members)} members')
+                return members
+            else:
+                print(f'  ⚠️  Member API returned HTTP {response.status_code}')
         except Exception as e:
-            print(f"Error fetching members for chat {chat_id}: {e}")
+            print(f"  ⚠️  Error fetching members for chat {chat_id}: {e}")
         return []
+    
+    def _extract_other_user_from_messages(self, chat_id: str) -> str:
+        """
+        Extract the other user's display name from messages in a 1:1 chat.
+        Used as fallback when member lookup fails.
+        
+        Args:
+            chat_id (str): The chat ID
+            
+        Returns:
+            str: The other user's display name, or 'Unknown' if not found
+        """
+        url = f'{GRAPH_API_BASE_URL}/chats/{chat_id}/messages?$top=50'
+        try:
+            response = requests.get(url, headers=self.headers)
+            if response.status_code == 200:
+                messages = response.json().get('value', [])
+                print(f'  📧 Fetched {len(messages)} messages from chat {chat_id}')
+                for msg in messages:
+                    from_data = msg.get('from')
+                    if from_data and isinstance(from_data, dict):
+                        user_data = from_data.get('user')
+                        if user_data and isinstance(user_data, dict):
+                            sender = user_data.get('displayName', '').strip()
+                            print(f'    Checking sender: "{sender}" (current user: "{self.user_display_name}")')
+                            # Return the first sender that isn't us (case-sensitive check)
+                            if sender and sender != self.user_display_name and sender != 'Unknown':
+                                print(f'  ✅ Extracted user "{sender}" from messages (member lookup failed)')
+                                return sender
+                print(f'  ⚠️  No valid sender found in {len(messages)} messages')
+            else:
+                print(f'  ⚠️  Failed to fetch messages: HTTP {response.status_code}')
+        except Exception as e:
+            print(f"⚠️  Error extracting user from messages for chat {chat_id}: {e}")
+        
+        return 'Unknown'
     
     def _process_one_on_one_chat(self, chat: Dict):
         """Process a one-on-one chat."""
@@ -209,11 +260,23 @@ class TeamsExporter:
         # If chat name is empty, use the other member's display name
         if not chat_name:
             members = self._get_chat_members(chat_id)
+            print(f'  👥 Found {len(members)} members in chat')
             other_member = next(
                 (m for m in members if m.get('displayName') != self.user_display_name), 
                 None
             )
-            display_name = other_member.get('displayName', 'Unknown') if other_member else 'Unknown'
+            if other_member:
+                print(f'    Member found: {other_member.get("displayName")}')
+            else:
+                print(f'    No members found (all matched current user or list empty)')
+            
+            display_name = (other_member.get('displayName', 'Unknown') if other_member else 'Unknown') or 'Unknown'
+            
+            # If member lookup failed, try to extract from messages
+            if not display_name or display_name == 'Unknown':
+                print(f'  🔍 Member lookup failed (got "{display_name}"), attempting to extract from messages...')
+                display_name = self._extract_other_user_from_messages(chat_id)
+            
             chat_name = f"Chat with {display_name}"
         
         print(f'#   Processing: {chat_name}')
@@ -275,6 +338,11 @@ class TeamsExporter:
         
         print(f'Found {len(all_chats)} total chats')
         
+        # Apply CHATS_LIMIT if configured
+        if CHATS_LIMIT:
+            all_chats = all_chats[:CHATS_LIMIT]
+            print(f'⚠️  CHATS_LIMIT is set to {CHATS_LIMIT}. Processing only {len(all_chats)} chats.')
+        
         # Process chats by type
         for chat in all_chats:
             chat_type = chat.get('chatType')
@@ -302,6 +370,13 @@ class TeamsExporter:
         teams_url = f'{GRAPH_API_BASE_URL}/me/joinedTeams'
         teams = self._make_paginated_request(teams_url)
         
+        # Apply CHATS_LIMIT to teams if configured (to skip channel processing when testing)
+        if CHATS_LIMIT:
+            teams = teams[:CHATS_LIMIT]
+            print(f'⚠️  CHATS_LIMIT is set to {CHATS_LIMIT}. Processing only {len(teams)} teams.')
+
+        channel_limit = CHANNELS_LIMIT_PER_TEAM if CHANNELS_LIMIT_PER_TEAM is not None else CHATS_LIMIT
+        
         for team in teams:
             team_id = team.get('id')
             team_name = team.get('displayName', f"Team {team_id}")
@@ -310,6 +385,11 @@ class TeamsExporter:
             # Get channels for this team
             channels_url = f'{GRAPH_API_BASE_URL}/teams/{team_id}/channels'
             channels = self._make_paginated_request(channels_url)
+
+            # Apply channel limit per team (falls back to CHATS_LIMIT when set)
+            if channel_limit:
+                channels = channels[:channel_limit]
+                print(f'⚠️  Channel limit is set to {channel_limit}. Processing only {len(channels)} channels in {team_name}.')
             
             self.channels_by_team[team_name] = []
             
@@ -404,7 +484,7 @@ class TeamsExporter:
                 print(f'\r#   Fetching messages for chat: {chat_name}...({current_count} messages)', end='', flush=True)
         
         url = f'{GRAPH_API_BASE_URL}/chats/{chat_id}/messages'
-        messages = self._make_paginated_request(url, chat_progress_callback, f"chat_{chat_name}")
+        messages = self._make_paginated_request(url, chat_progress_callback, f"chat_{chat_name}", limit=MESSAGES_LIMIT_PER_CHAT)
         
         print(f'\r#   Fetching messages for chat: {chat_name}...({len(messages)} messages)')
         return messages
@@ -434,9 +514,11 @@ class TeamsExporter:
             total_count = sum(message_counts.values())
             header_title = f"{title} ({total_count})"
 
+        # Add category hint classes/attributes for styling and icons
+        category = section_id.split('-')[0] if '-' in section_id else section_id
         html = f'''
-  <div class="sidebar-section-header" onclick="toggleSection('{section_id}')">{header_title}</div>
-  <div id="{section_id}" class="sidebar-section-content" style="display:none;">
+    <div class="sidebar-section-header top-header {section_id}-header" data-cat="{category}" onclick="toggleSection('{section_id}')">{header_title}</div>
+    <div id="{section_id}" class="sidebar-section-content" style="display:none;">
 '''
         
         for chat_name, chat_id in chats.items():
@@ -494,24 +576,196 @@ class TeamsExporter:
             )
             
             # Skip messages with no content after processing
-            # Remove common empty HTML patterns and check if there's meaningful content
+            # Check for meaningful content: either text or images
             content_check = re.sub(r'<[^>]+>', '', clean_content or '').strip()
-            if not clean_content or not clean_content.strip() or not content_check:
+            has_text = bool(content_check)
+            has_images = bool(re.search(r'<img[^>]+>', clean_content or ''))
+            
+            if not clean_content or (not has_text and not has_images):
                 return ""
             
             # Format timestamp
             timestamp = msg.get('lastModifiedDateTime', msg.get('createdDateTime', ''))
             formatted_timestamp = format_timestamp(timestamp)
             
+            # Track statistics: message date and participant count
+            try:
+                if timestamp:
+                    # Parse and store message date
+                    self.message_dates.append(timestamp)
+                    # Count messages per participant (excluding own messages)
+                    if sender and sender != self.user_display_name:
+                        self.participant_message_counts[sender] = self.participant_message_counts.get(sender, 0) + 1
+            except Exception:
+                pass  # Silently ignore stats tracking errors
+            
             # Determine CSS class based on sender
             css_class = 'mine' if sender == self.user_display_name else 'theirs'
+
+            # Safely include sender as data attribute for client-side filtering
+            sender_attr = (sender or 'Unknown').replace('"', '&quot;')
             
-            return f'<div class="clearfix"><div class="message {css_class}"><div class="meta">{sender} • {formatted_timestamp}</div><div class="text">{clean_content}</div></div></div>'
+            # Generate avatar HTML with initials and color (only for received messages)
+            initials = ''.join([n[0].upper() for n in (sender or '?').split() if n][:2]) or '?'
+            avatar_html = f'<div class="avatar" style="background-color: hsl({hash(sender) % 360}, 70%, 55%);">{initials}</div>' if css_class == 'theirs' else ''
+            
+            # Generate unique message ID for copy functionality
+            message_uid = f"msg-{message_id}"
+            
+            # Extract plain text from HTML content for copy
+            plain_text = re.sub(r'<[^>]+>', '', clean_content or '').strip()
+            # Escape HTML entities for data attribute
+            plain_text_escaped = plain_text.replace('&', '&amp;').replace('"', '&quot;').replace("'", '&#39;').replace('<', '&lt;').replace('>', '&gt;')
+            
+            return f'<div class="clearfix"><div class="message {css_class}" data-sender="{sender_attr}" id="{message_uid}"><div class="message-content"><div class="message-header">{avatar_html}<div class="meta">{sender} • {formatted_timestamp}<button class="copy-btn" data-message-id="{message_uid}" data-message-text="{plain_text_escaped}" onclick="copyMessageFromBtn(this)" title="Copy message">📋</button></div></div><div class="text">{clean_content}</div></div></div></div>'
         except Exception as e:
             # Silently handle errors and return empty string to avoid console spam
             # Uncomment the line below if you want to see the error details for debugging
             # print(f"Error processing message: {e}")
             return ""
+
+    def _calculate_statistics(self, html_content: str = None) -> Dict:
+        """
+        Calculate statistics for the export.
+        
+        Args:
+            html_content (str): Optional HTML content string to calculate size. 
+                              If None, will estimate based on images only.
+        
+        Returns:
+            Dict: Statistics including total messages, chats, date range, storage size, and top participants
+        """
+        import os
+        from datetime import datetime
+        
+        # Count total messages
+        total_messages = (sum(self.chat_message_counts.get('oneonone', {}).values()) +
+                         sum(self.chat_message_counts.get('group', {}).values()) +
+                         sum(self.chat_message_counts.get('meeting', {}).values()) +
+                         sum(self.channel_message_counts.values()))
+        
+        # Count total chats
+        total_chats = (len(self.chats_one_on_one) + len(self.chats_group) + 
+                      len(self.chats_meeting) + len(self.channel_message_counts))
+        
+        # Calculate storage size and count images
+        total_size = 0
+        total_images = 0
+        
+        # Add HTML content size (if provided, use actual size; otherwise estimate)
+        if html_content:
+            total_size += len(html_content.encode('utf-8'))
+        
+        # Add image folder size
+        image_folder_path = os.path.join(self.output_folder, self.image_folder)
+        if os.path.exists(image_folder_path):
+            for dirpath, dirnames, filenames in os.walk(image_folder_path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    total_size += os.path.getsize(filepath)
+                    total_images += 1
+        
+        # Convert to readable format
+        if total_size < 1024:
+            size_str = f"{total_size} B"
+        elif total_size < 1024 * 1024:
+            size_str = f"{total_size / 1024:.1f} KB"
+        else:
+            size_str = f"{total_size / (1024 * 1024):.1f} MB"
+        
+        # Extract date range and count messages per participant
+        earliest_date = None
+        latest_date = None
+        participant_counts = {}
+        
+        # Process collected dates to find range
+        if self.message_dates:
+            self.message_dates.sort()
+            earliest_iso = self.message_dates[0]
+            latest_iso = self.message_dates[-1]
+            
+            try:
+                earliest_dt = datetime.fromisoformat(earliest_iso.replace('Z', '+00:00'))
+                latest_dt = datetime.fromisoformat(latest_iso.replace('Z', '+00:00'))
+                earliest_date = earliest_dt.strftime('%B %d, %Y')
+                latest_date = latest_dt.strftime('%B %d, %Y')
+            except Exception:
+                earliest_date = None
+                latest_date = None
+        
+        # Get top 10 most active participants
+        top_participants = []
+        if self.participant_message_counts:
+            sorted_participants = sorted(
+                self.participant_message_counts.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:10]
+            top_participants = [
+                {'name': name, 'count': count}
+                for name, count in sorted_participants
+            ]
+        
+        return {
+            'total_messages': total_messages,
+            'total_chats': total_chats,
+            'total_size': size_str,
+            'total_images': total_images,
+            'one_on_one': len(self.chats_one_on_one),
+            'group': len(self.chats_group),
+            'meeting': len(self.chats_meeting),
+            'channels': len(self.channel_message_counts),
+            'earliest_date': earliest_date,
+            'latest_date': latest_date,
+            'top_participants': top_participants
+        }
+
+    def _get_date_label(self, timestamp: str) -> str:
+        """Return a friendly date label (day-level) for separators."""
+        try:
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            return dt.strftime('%A, %b %d, %Y')
+        except Exception:
+            return 'Unknown date'
+    
+    def _generate_participant_list_html(self, top_participants: List[Dict]) -> str:
+        """
+        Generate HTML for top participants list.
+        
+        Args:
+            top_participants (List[Dict]): List of participant dicts with 'name' and 'count' keys
+            
+        Returns:
+            str: HTML for participant items
+        """
+        html = ''
+        colors = [
+            '#ec4899',  # pink
+            '#f97316',  # orange
+            '#eab308',  # yellow
+            '#22c55e',  # green
+            '#06b6d4',  # cyan
+            '#3b82f6',  # blue
+            '#8b5cf6',  # purple
+            '#6366f1',  # indigo
+            '#14b8a6',  # teal
+            '#f43f5e',  # rose
+        ]
+        
+        for idx, participant in enumerate(top_participants):
+            color = colors[idx % len(colors)]
+            name = participant.get('name', 'Unknown')
+            count = participant.get('count', 0)
+            
+            # Truncate long names
+            display_name = name[:35] + '...' if len(name) > 35 else name
+            
+            html += f'''<div style="padding: 12px; background: color-mix(in srgb, {color} 5%, var(--input-bg)); border-radius: 8px; border: 1px solid color-mix(in srgb, {color} 20%, var(--input-border));">
+              <div style="font-size: 0.85em; color: var(--text); font-weight: 600; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{name}">#{idx+1} {display_name}</div>
+              <div style="font-size: 0.9em; color: var(--meta);">{count:,} messages</div>
+            </div>'''
+        
+        return html
     
     def _generate_chat_html(self, chat_name: str, chat_id: str, chat_type: str, 
                            member_lists: Optional[Dict[str, str]] = None) -> Tuple[str, int]:
@@ -537,7 +791,7 @@ class TeamsExporter:
         if member_lists and chat_name in member_lists:
             formatted_members = format_member_list_for_display(member_lists[chat_name])
             if formatted_members:
-                html += f'  <div style="color:#555;font-size:0.95em;margin-bottom:10px;">Members: {formatted_members}</div>\n'
+                html += f'  <div class="chat-members" style="color:#555;font-size:0.95em;margin-bottom:10px;">Members: {formatted_members}</div>\n'
         
         # Check if this chat should be ignored
         if chat_name in IGNORED_CHATS:
@@ -588,7 +842,13 @@ class TeamsExporter:
             filtered_messages.append(msg)
         
         # Generate HTML for each valid message
+        last_date_label = None
         for msg in filtered_messages:
+            timestamp = msg.get('createdDateTime') or msg.get('lastModifiedDateTime', '')
+            date_label = self._get_date_label(timestamp)
+            if date_label != last_date_label:
+                html += f'<div class="date-separator"><span>{date_label}</span></div>'
+                last_date_label = date_label
             message_html = self._generate_message_html(msg, chat_type)
             if message_html.strip():  # Only add non-empty HTML
                 html += message_html
@@ -654,7 +914,13 @@ class TeamsExporter:
                 filtered_messages.append(msg)
         
         # Generate HTML for each valid message
+        last_date_label = None
         for msg in filtered_messages:
+            timestamp = msg.get('createdDateTime') or msg.get('lastModifiedDateTime', '')
+            date_label = self._get_date_label(timestamp)
+            if date_label != last_date_label:
+                html += f'<div class="date-separator"><span>{date_label}</span></div>'
+                last_date_label = date_label
             message_html = self._generate_message_html(msg, 'channel')
             if message_html.strip():  # Only add non-empty HTML
                 html += message_html
@@ -711,7 +977,7 @@ class TeamsExporter:
 
         total_channel_messages = sum(self.channel_message_counts.values())
         channel_header_title = f"▶ Channel Chats ({total_channel_messages})"
-        sidebar_html += f"  <div class=\"sidebar-section-header\" onclick=\"toggleSection('channel-section')\">{channel_header_title}</div>\n"
+        sidebar_html += f"  <div class=\"sidebar-section-header top-header channel-section-header\" data-cat=\"channel\" onclick=\"toggleSection('channel-section')\">{channel_header_title}</div>\n"
         sidebar_html += '  <div id="channel-section" class="sidebar-section-content" style="display:none;">\n'
 
         for team_name, channels in self.channels_by_team.items():
@@ -737,36 +1003,118 @@ class TeamsExporter:
         export_html += '</div>\n'
         export_html += '</div><div class="content">\n'
 
-        # Add cover page
-        export_html += '''  <div id="cover-page" style="display: block; text-align: center; padding: 60px 20px 40px 20px; color: #23272e;">
+        # Breadcrumb navigation (shown when a chat is selected)
+        export_html += '<div id="breadcrumb"></div>\n'
+
+        # Placeholder for statistics - will be calculated and injected later
+        stats_html_placeholder = '<!--STATS_PANEL_PLACEHOLDER-->'
+        export_html += stats_html_placeholder
+
+        # Add chat and channel content (already processed)
+        export_html += chat_sections_html
+        export_html += channel_sections_html
+        
+        # Add navigation buttons and close tags
+        export_html += NAVIGATION_BUTTONS_HTML
+        export_html += '</div></body></html>'
+        
+        # Now calculate statistics with the complete HTML content
+        stats = self._calculate_statistics(export_html)
+        
+        # Generate stats HTML panel
+        stats_html = f'''  <div id="cover-page" style="display: block; text-align: center; padding: 60px 20px 40px 20px; color: var(--text);">
     <h1 style="font-size:2.5em;margin-bottom:0.2em;">Teams Chat Export</h1>
     <p style="font-size:1.2em;max-width:600px;margin:0 auto 1.5em auto;">
       Welcome!<br>
       This file contains all your exported Microsoft Teams chats, meetings, and channel messages.<br>
-      <span style="color:#888;">Exported on <span id="cover-export-date"><!--EXPORT_DATE--></span></span>
+      <span style="color:var(--meta);">Exported on <span id="cover-export-date"><!--EXPORT_DATE--></span></span>
     </p>
-    <ul style="text-align:left;display:inline-block;margin-bottom:1.5em;">
+    
+    <!-- Statistics Panel -->
+    <div style="background: var(--input-bg); border-radius: 12px; padding: 30px; margin: 2em auto; max-width: 900px; border: 1px solid var(--input-border); box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+      <h2 style="font-size: 1.3em; margin-top: 0; color: var(--text); margin-bottom: 1.5em;">Export Statistics</h2>
+      
+      <!-- Main Stats Grid -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px;">
+        <div style="padding: 15px; background: var(--input-bg); border-radius: 8px; border-left: 4px solid #3b82f6; border: 1px solid color-mix(in srgb, #3b82f6 20%, var(--input-border));">
+          <div style="font-size: 0.75em; color: var(--meta); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">📊 Total Messages</div>
+          <div style="font-size: 2.2em; font-weight: bold; color: var(--text);">{stats['total_messages']:,}</div>
+        </div>
+        <div style="padding: 15px; background: var(--input-bg); border-radius: 8px; border-left: 4px solid #8b5cf6; border: 1px solid color-mix(in srgb, #8b5cf6 20%, var(--input-border));">
+          <div style="font-size: 0.75em; color: var(--meta); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">💬 Total Chats</div>
+          <div style="font-size: 2.2em; font-weight: bold; color: var(--text);">{stats['total_chats']}</div>
+        </div>
+        <div style="padding: 15px; background: var(--input-bg); border-radius: 8px; border-left: 4px solid #10b981; border: 1px solid color-mix(in srgb, #10b981 20%, var(--input-border));">
+          <div style="font-size: 0.75em; color: var(--meta); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">🖼️ Total Images</div>
+          <div style="font-size: 2.2em; font-weight: bold; color: var(--text);">{stats['total_images']:,}</div>
+        </div>
+        <div style="padding: 15px; background: var(--input-bg); border-radius: 8px; border-left: 4px solid #f59e0b; border: 1px solid color-mix(in srgb, #f59e0b 20%, var(--input-border));">
+          <div style="font-size: 0.75em; color: var(--meta); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">💾 Storage Used</div>
+          <div style="font-size: 2.2em; font-weight: bold; color: var(--text);">{stats['total_size']}</div>
+        </div>
+      </div>
+      
+      <!-- Date Range Section -->
+      {'<div style="background: color-mix(in srgb, #ecfdf5 10%, var(--input-bg)); border-radius: 8px; padding: 15px; margin-bottom: 20px; border: 1px solid color-mix(in srgb, #059669 20%, var(--input-border));">' if stats['earliest_date'] else '<div style="display:none;">'}
+        <div style="font-size: 0.75em; color: #047857; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">📅 Message Date Range</div>
+        <div style="font-size: 1em; color: var(--text); margin: 0;">
+          <strong>{stats['earliest_date'] if stats['earliest_date'] else 'N/A'}</strong> → <strong>{stats['latest_date'] if stats['latest_date'] else 'N/A'}</strong>
+        </div>
+      </div>
+      
+      <!-- Breakdown Section -->
+      <div style="border-top: 1px solid var(--input-border); padding-top: 20px; margin-bottom: 20px;">
+        <div style="font-size: 0.85em; color: var(--meta); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">Chat Breakdown</div>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+          <div style="padding: 12px; background: color-mix(in srgb, #dbeafe 10%, var(--input-bg)); border-radius: 6px; border: 1px solid color-mix(in srgb, #bfdbfe 20%, var(--input-border));">
+            <div style="font-size: 1.5em; margin-bottom: 5px;">💬</div>
+            <div style="font-size: 0.7em; color: #1e40af; font-weight: 600; margin-bottom: 5px;">1:1 CHATS</div>
+            <div style="font-size: 1.8em; font-weight: bold; color: var(--text);">{stats['one_on_one']}</div>
+          </div>
+          <div style="padding: 12px; background: color-mix(in srgb, #ede9fe 10%, var(--input-bg)); border-radius: 6px; border: 1px solid color-mix(in srgb, #ddd6fe 20%, var(--input-border));">
+            <div style="font-size: 1.5em; margin-bottom: 5px;">👥</div>
+            <div style="font-size: 0.7em; color: #5b21b6; font-weight: 600; margin-bottom: 5px;">GROUP</div>
+            <div style="font-size: 1.8em; font-weight: bold; color: var(--text);">{stats['group']}</div>
+          </div>
+          <div style="padding: 12px; background: color-mix(in srgb, #fef3c7 10%, var(--input-bg)); border-radius: 6px; border: 1px solid color-mix(in srgb, #fde68a 20%, var(--input-border));">
+            <div style="font-size: 1.5em; margin-bottom: 5px;">📅</div>
+            <div style="font-size: 0.7em; color: #92400e; font-weight: 600; margin-bottom: 5px;">MEETING</div>
+            <div style="font-size: 1.8em; font-weight: bold; color: var(--text);">{stats['meeting']}</div>
+          </div>
+          <div style="padding: 12px; background: color-mix(in srgb, #dcfce7 10%, var(--input-bg)); border-radius: 6px; border: 1px solid color-mix(in srgb, #bbf7d0 20%, var(--input-border));">
+            <div style="font-size: 1.5em; margin-bottom: 5px;">📢</div>
+            <div style="font-size: 0.7em; color: #15803d; font-weight: 600; margin-bottom: 5px;">CHANNEL</div>
+            <div style="font-size: 1.8em; font-weight: bold; color: var(--text);">{stats['channels']}</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Top Participants Section -->
+      {'<div style="background: color-mix(in srgb, #f3e8ff 10%, var(--input-bg)); border-radius: 8px; padding: 15px; border: 1px solid color-mix(in srgb, #8b5cf6 20%, var(--input-border));">' if stats['top_participants'] else '<div style="display:none;">'}
+        <div style="font-size: 0.85em; color: var(--meta); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">🏆 Top 10 Most Active Participants</div>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+          {self._generate_participant_list_html(stats['top_participants'])}
+        </div>
+      </div>
+    </div>
+    
+    <ul style="text-align:left;display:inline-block;margin-bottom:1.5em;color:var(--text);">
       <li>Browse all your chats and channels using the sidebar.</li>
       <li>Click on a chat or channel to view its messages.</li>
       <li>Use the search box to filter messages across all chats.</li>
       <li>Click images to view them in a lightbox.</li>
     </ul>
-    <div style="margin-top:2em;font-size:0.9em;color:#aaa;">Powered by Teams Chat Export Script <!--SCRIPT_VERSION--></div>
+    <div style="margin-top:2em;font-size:0.9em;color:var(--meta);">Powered by Teams Chat Export Script <!--SCRIPT_VERSION--></div>
   </div>
 '''
-
-        # Append chat and channel content (already processed)
-        export_html += chat_sections_html
-        export_html += channel_sections_html
-
-        # Replace placeholders
+        
+        # Replace the placeholder with actual stats HTML
+        export_html = export_html.replace(stats_html_placeholder, stats_html)
+        
+        # Replace placeholders (must be after stats_html is injected)
         export_date = datetime.now().strftime("%Y-%m-%d at %H:%M:%S")
         export_html = export_html.replace("<!--EXPORT_DATE-->", f"{export_date} with {self.script_version}")
         export_html = export_html.replace("<!--SCRIPT_VERSION-->", self.script_version)
-        
-        # Add navigation buttons and close tags
-        export_html += NAVIGATION_BUTTONS_HTML
-        export_html += '</div></body></html>'
         
         return export_html
     

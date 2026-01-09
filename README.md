@@ -31,8 +31,20 @@ A Python script that exports Microsoft Teams chats, group conversations, meeting
 - **Lightbox Images**: Click images to view them in a fullscreen lightbox
 - **Scroll Navigation**: Quick scroll-to-top and scroll-to-bottom buttons
 - **Member Lists**: Shows chat participants with tooltips for group conversations
+- **Date Separators**: Day-by-day dividers inside chats for quicker temporal scanning
+- **Dark Mode**: One-click toggle with saved preference
+- **Search Highlights**: Matched terms are highlighted directly in messages
 
 ### Advanced Features
+
+### What’s New (UI/UX)
+- **Filter Panel Redesign**: Collapsible advanced filters with quick tags for Images and Code, active filter chips, and a Clear All button.
+- **Smarter Filtering**: Hides chats/channels and date separators with zero matches during filtering; restores original counts when cleared.
+- **State Preservation**: Keeps your expanded/collapsed sidebar state intact when applying/clearing filters; Home collapses everything consistently.
+- **Breadcrumbs + Home**: Breadcrumb updates on chat selection; Home returns to cover page and resets navigation states.
+- **Copy Message**: Per-message copy button for quick clipboard access to plain text.
+- **Per-Chat Export**: Export the currently visible messages of the selected chat to TXT, Markdown, or print‑friendly HTML. The export bar sits under the chat title and, for group/meeting chats, directly under the Members section.
+- **Statistics Panel**: Cover page now includes total messages, chats, images, storage size, optional date range, and Top 10 participants.
 - **Ignore Lists**: Configure which channels and chats to skip during export
 - **Automatic User Detection**: Automatically identifies your display name from Microsoft Graph API
 - **Progress Tracking**: Real-time progress updates during export process
@@ -42,17 +54,34 @@ A Python script that exports Microsoft Teams chats, group conversations, meeting
 ## 📸 Screenshots
 
 *The exported HTML file provides a clean, Teams-like interface with:*
+- ![Export example](export_example.jpg)
+ - **Copy Button**: One-click copy of message text
+ - **Sticky Export Bar**: Per-chat export toolbar under the chat header or members block
 - **Sidebar Navigation**: Browse all your chats and channels
 - **Message Display**: Clean message layout with timestamps and sender information
 - **Search Bar**: Filter messages across all conversations
 - **Image Gallery**: Embedded images with lightbox viewing
 
 ## 🔧 Requirements
+- **Code-only Filter**: Show only messages that contain code blocks
+- **Date Range Filter**: Optional from/to date filter with an “Apply date filter” toggle
+- **Quick Tags**: One-click “Images” and “Code” tags toggle hidden filters and restyle to indicate state
+- **Active Filters Chips**: Compact pills show the in-effect filters; Clear All removes them in one click
+- **Live Message Counts**: See message counts update on sidebar items as you filter
+- **Smart Visibility**: Chats/channels with no matches automatically hide while filtering; date separators hide if no visible messages beneath
+- **Consistent Behavior**: Filtering is unified across 1-on-1, group, meetings, and channels
+- **State Preservation**: Expanded/collapsed state for teams and Channel Chats is preserved while filtering and after clearing
+- **Restore Counts**: Original permanent message counts restore when clearing filters
 
-### System Requirements
-- **Python**: 3.6 or higher
-- **Operating System**: Windows, macOS, or Linux
-- **Internet Connection**: Required for Microsoft Graph API access
+### Per-Chat Export
+
+- **Formats**: TXT, Markdown (.md), and print-friendly HTML
+- **Scope**: Exports only currently visible messages (respects all active filters)
+- **Placement**: Toolbar appears under the chat title and, when available, directly under the Members section in group/meeting chats
+- **Content Handling**:
+    - TXT: Plain text with image URLs listed
+    - MD: Sender bolded, code blocks fenced, images embedded with Markdown syntax
+    - HTML: Minimal, printer-friendly layout preserving message HTML and images
 
 ### Python Dependencies
 ```
@@ -61,6 +90,8 @@ requests>=2.25.0
 
 ### Microsoft Graph API Access
 - Valid Microsoft Graph API access token with the following permissions:
+ - **Stats Panel**: On the cover page, shows totals, date range (if available), and top participants
+ - **Per-Chat Export**: Toolbar for exporting the active chat in TXT/MD/HTML
   - `Chat.ReadWrite`
   - `ChannelMessage.Read.All`
   - `Team.ReadBasic.All`
@@ -134,6 +165,26 @@ IGNORED_CHATS = [
 - **Ignore Lists**: Use these to skip large or unimportant channels/chats
 - **Case Sensitivity**: Team/channel names in ignore lists are case-sensitive
 
+### 4. Testing Configuration (Optional)
+
+For faster testing and development, you can limit the number of messages and chats processed:
+
+```python
+# Limit messages per chat for faster testing (set to None for production)
+MESSAGES_LIMIT_PER_CHAT = 50  # Examples: 50, 100, 500, or None for unlimited
+
+# Limit number of chats to process for faster testing (set to None for production)
+CHATS_LIMIT = 5  # Examples: 5, 10, 20, or None for unlimited
+
+# Limit number of channels per team for faster testing (set to None for production)
+# If left as None, the script falls back to CHATS_LIMIT when set
+CHANNELS_LIMIT_PER_TEAM = None  # Examples: 3, 5, 10, or None for unlimited
+```
+
+**Examples:**
+- For quick testing: `CHATS_LIMIT = 3`, `MESSAGES_LIMIT_PER_CHAT = 50`, and `CHANNELS_LIMIT_PER_TEAM = 3`
+- For full export: Set both to `None`
+
 ## 📖 Usage
 
 ### Basic Usage
@@ -150,7 +201,7 @@ IGNORED_CHATS = [
 
 ```
 ### Microsoft Teams Chat Export Started
-Script Version: v0.1.2
+Script Version: v0.1.5
 ✅ Fetched user display name: Your Name
 ✅ Access token valid - authenticated as: Your Name
 ##  Fetching all chats
@@ -246,6 +297,7 @@ Real-time updates show:
 
 The HTML export includes advanced search capabilities:
 - **Real-time Search**: Filter messages by text across all conversations
+- **Sender Filter**: Filter messages by sender name substring across all conversations
 - **Image-only Filter**: Toggle to show only messages containing images
 - **Combined Filtering**: Search and image filter work together (AND logic)
 - **Live Message Counts**: See message counts update as you filter
@@ -343,7 +395,7 @@ This project is provided as-is for educational and personal use. Please ensure y
 
 ---
 
-**Version**: v0.1.3  
+**Version**: v0.1.5  
 **Last Updated**: January 2026  
 **Tested with**: Microsoft Teams Web, Desktop App  
 **Python Compatibility**: 3.6+

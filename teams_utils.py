@@ -5,8 +5,29 @@ This module contains utility functions for processing Microsoft Teams chat expor
 including message processing, image handling, and API interactions.
 
 Author: Alexander Wegner
-Version: v0.1.1
+Version: v0.1.5
 """
+
+
+# =============================================================================
+# API UTILITIES
+# =============================================================================
+
+def get_api_headers(access_token):
+    """
+    Get standard headers for Microsoft Graph API requests.
+    
+    Args:
+        access_token (str): The bearer token for API authentication
+        
+    Returns:
+        dict: Headers dictionary for API requests
+    """
+    return {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+        'ConsistencyLevel': 'eventual'
+    }
 
 import requests
 import html
@@ -101,6 +122,63 @@ def wrap_images_with_lightbox(content):
     return re.sub(r'<img src="([^"]+)"\s*/?>', r'<a href="\1" class="lightbox"><img src="\1"></a>', content)
 
 
+def clean_empty_elements(content):
+    """
+    Remove empty or whitespace-only block-level elements (divs, paragraphs) outside code blocks.
+    
+    Cleans up unnecessary empty tags that Teams inserts above code blocks, which render as blank lines.
+    Preserves content inside <pre> tags and intentional structure.
+
+    Args:
+        content (str): The HTML content to clean.
+
+    Returns:
+        str: The modified HTML content with empty elements removed (except in pre blocks).
+    """
+    # Temporarily replace <pre> blocks to protect them
+    pre_blocks = []
+    def save_pre(match):
+        pre_blocks.append(match.group(0))
+        return f'__PRE_PLACEHOLDER_{len(pre_blocks)-1}__'
+    
+    content = re.sub(r'<pre[^>]*>.*?</pre>', save_pre, content, flags=re.DOTALL)
+    
+    # Now clean empty elements outside pre blocks
+    content = re.sub(r'<div[^>]*>\s*</div>', '', content)
+    content = re.sub(r'<p[^>]*>\s*</p>', '', content)
+    content = re.sub(r'\s*<br[^>]*>\s*', '', content)
+    
+    # Restore <pre> blocks
+    for idx, pre_block in enumerate(pre_blocks):
+        content = content.replace(f'__PRE_PLACEHOLDER_{idx}__', pre_block)
+    
+    return content
+
+
+def clean_code_blocks(content):
+    """
+    Remove excessive blank lines from code blocks while preserving intentional formatting.
+    
+    Finds all <pre> blocks and collapses multiple consecutive blank lines down to a single blank line.
+    This cleans up formatting without removing intentional line breaks.
+
+    Args:
+        content (str): The HTML content containing <pre> code blocks.
+
+    Returns:
+        str: The modified HTML content with cleaned code blocks.
+    """
+    def collapse_blank_lines(match):
+        code = match.group(1)
+        # Replace 3+ consecutive newlines (blank lines) with 2 newlines (1 blank line preserved)
+        code = re.sub(r'\n\n\n+', '\n\n', code)
+        return f'<pre>{code}</pre>'
+    
+    # Find all <pre> tags and clean them
+    content = re.sub(r'<pre>(.*?)</pre>', collapse_blank_lines, content, flags=re.DOTALL)
+    return content
+
+
 def chat_has_messages(chat_id, headers):
     """
     Check if a Microsoft Teams chat has at least one user message.
@@ -175,6 +253,12 @@ def process_message_content(raw_content, message_id, access_token, image_folder)
     # Clean img tags and wrap with lightbox
     clean_content = clean_img_tags(clean_content)
     clean_content = wrap_images_with_lightbox(clean_content)
+    
+    # Remove empty block-level elements (divs, paragraphs) that Teams inserts
+    clean_content = clean_empty_elements(clean_content)
+    
+    # Clean excessive blank lines in code blocks
+    clean_content = clean_code_blocks(clean_content)
 
     return clean_content
 
