@@ -102,7 +102,7 @@ requests>=2.25.0
 
 ### 1. Clone or Download
 ```bash
-git clone <repository-url>
+git clone https://github.com/Stish/teams_chat_export.git
 # OR download the ZIP file and extract it
 ```
 
@@ -399,3 +399,4 @@ This project is provided as-is for educational and personal use. Please ensure y
 **Last Updated**: January 2026  
 **Tested with**: Microsoft Teams Web, Desktop App  
 **Python Compatibility**: 3.6+
+
