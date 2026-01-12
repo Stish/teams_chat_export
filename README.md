@@ -201,7 +201,7 @@ CHANNELS_LIMIT_PER_TEAM = None  # Examples: 3, 5, 10, or None for unlimited
 
 ```
 ### Microsoft Teams Chat Export Started
-Script Version: v0.1.5
+Script Version: v0.1.5.1
 ✅ Fetched user display name: Your Name
 ✅ Access token valid - authenticated as: Your Name
 ##  Fetching all chats
@@ -395,7 +395,7 @@ This project is provided as-is for educational and personal use. Please ensure y
 
 ---
 
-**Version**: v0.1.5  
+**Version**: v0.1.5.1  
 **Last Updated**: January 2026  
 **Tested with**: Microsoft Teams Web, Desktop App  
 **Python Compatibility**: 3.6+

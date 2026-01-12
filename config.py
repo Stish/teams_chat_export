@@ -5,7 +5,7 @@ This file contains all configuration parameters and constants used by the Teams 
 Modify these values according to your needs.
 
 Author: Alexander Wegner
-Version: v0.1.5
+Version: v0.1.5.1
 """
 
 # =============================================================================
@@ -35,7 +35,7 @@ IMAGE_FOLDER = 'img'
 # =============================================================================
 
 # Script version
-SCRIPT_VERSION = 'v0.1.5'
+SCRIPT_VERSION = 'v0.1.5.1'
 
 # =============================================================================
 # API CONFIGURATION

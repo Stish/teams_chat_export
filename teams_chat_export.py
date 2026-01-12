@@ -22,7 +22,7 @@ Usage:
     python teams_chat_export.py
 
 Author: Alexander Wegner
-Version: v0.1.5
+Version: v0.1.5.1
 """
 
 import os
@@ -517,7 +517,7 @@ class TeamsExporter:
         # Add category hint classes/attributes for styling and icons
         category = section_id.split('-')[0] if '-' in section_id else section_id
         html = f'''
-    <div class="sidebar-section-header top-header {section_id}-header" data-cat="{category}" onclick="toggleSection('{section_id}')">{header_title}</div>
+    <div class="sidebar-section-header top-header {section_id}-header" data-cat="{category}" onclick="toggleSection('{section_id}')"><div class="header-content">{header_title}</div><span class="toggle-icon">+</span></div>
     <div id="{section_id}" class="sidebar-section-content" style="display:none;">
 '''
         
@@ -966,25 +966,25 @@ class TeamsExporter:
         # Build sidebar with counts
         sidebar_html = '<div class="sidebar-section">\n'
         sidebar_html += self._generate_sidebar_section(
-            'oneonone-section', '▶ One on One Chats', self.chats_one_on_one, None, self.chat_message_counts['oneonone']
+            'oneonone-section', 'One on One Chats', self.chats_one_on_one, None, self.chat_message_counts['oneonone']
         )
         sidebar_html += self._generate_sidebar_section(
-            'group-section', '▶ Group Chats', self.chats_group, self.group_full_member_lists, self.chat_message_counts['group']
+            'group-section', 'Group Chats', self.chats_group, self.group_full_member_lists, self.chat_message_counts['group']
         )
         sidebar_html += self._generate_sidebar_section(
-            'meeting-section', '▶ Meeting Chats', self.chats_meeting, self.meeting_full_member_lists, self.chat_message_counts['meeting']
+            'meeting-section', 'Meeting Chats', self.chats_meeting, self.meeting_full_member_lists, self.chat_message_counts['meeting']
         )
 
         total_channel_messages = sum(self.channel_message_counts.values())
-        channel_header_title = f"▶ Channel Chats ({total_channel_messages})"
-        sidebar_html += f"  <div class=\"sidebar-section-header top-header channel-section-header\" data-cat=\"channel\" onclick=\"toggleSection('channel-section')\">{channel_header_title}</div>\n"
+        channel_header_title = f"Channel Chats ({total_channel_messages})"
+        sidebar_html += f"  <div class=\"sidebar-section-header top-header channel-section-header\" data-cat=\"channel\" onclick=\"toggleSection('channel-section')\"><div class=\"header-content\">{channel_header_title}</div><span class=\"toggle-icon\">+</span></div>\n"
         sidebar_html += '  <div id="channel-section" class="sidebar-section-content" style="display:none;">\n'
 
         for team_name, channels in self.channels_by_team.items():
             safe_team_id = urllib.parse.quote(str(team_name or ''), safe='')
             team_count = sum(self.channel_message_counts.get((team_name, ch_name), 0) for ch_name, _, _ in channels)
-            team_header = f"▶&nbsp;&nbsp;&nbsp;&nbsp;{team_name} ({team_count})"
-            sidebar_html += f'    <div class="sidebar-section-header" onclick="toggleSection(\'team-{safe_team_id}\')">{team_header}</div>\n'
+            team_header = f"{team_name} ({team_count})"
+            sidebar_html += f'    <div class="sidebar-section-header" onclick="toggleSection(\'team-{safe_team_id}\')"><div class="header-content">{team_header}</div><span class="toggle-icon">+</span></div>\n'
             sidebar_html += f'    <div id="team-{safe_team_id}" class="sidebar-section-content" style="display:none;">\n'
 
             for channel_name, team_id, channel_id in channels:

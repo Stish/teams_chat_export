@@ -20,7 +20,7 @@ Structure:
 - HTML: Base structure with placeholders for dynamic content
 
 Author: Alexander Wegner
-Version: v0.1.5
+Version: v0.1.5.1
 Last Updated: 2026-01-09
 """
 
@@ -252,24 +252,30 @@ a.lightbox { text-decoration: none; }
 .top-header[data-cat="group"]::before { content: "👪"; }
 .top-header[data-cat="meeting"]::before { content: "📅"; }
 .top-header[data-cat="channel"]::before { content: "📢"; }
-.sidebar-section-header:hover {
-    background: var(--sidebar-hover);
+.sidebar-section-header {
+    cursor: pointer;
+    background: var(--sidebar-header-bg);
+    padding: 8px 10px;
+    font-weight: bold;
+    border-bottom: 1px solid var(--sidebar-border);
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
 }
-.sidebar-section-content {
-    padding-left: 0;
+.sidebar-section-header .header-content {
+    flex: 1;
+    text-align: left;
 }
-
-/* === CHAT TYPE SPECIFIC STYLES === */
-/* One on One Chats */
-#oneonone-section.sidebar-section-content {
-    background: var(--sidebar-link-bg);
-}
-#oneonone-section a {
-    background: var(--sidebar-link-bg);
+.sidebar-section-header .toggle-icon {
+    display: inline-block;
+    min-width: 16px;
+    text-align: right;
+    font-weight: bold;
     color: var(--sidebar-text);
+    font-size: 1.4em;
 }
-
-/* Group Chats */
 #group-section.sidebar-section-content {
     background: var(--sidebar-link-bg);
 }
@@ -705,10 +711,10 @@ function toggleAdvancedFilters() {
     var icon = document.getElementById('advFilterToggleIcon');
     if (panel.style.display === 'none') {
         panel.style.display = 'block';
-        icon.textContent = '▼';
+        icon.textContent = '-';
     } else {
         panel.style.display = 'none';
-        icon.textContent = '▶';
+        icon.textContent = '+';
     }
 }
 
@@ -1104,22 +1110,34 @@ document.addEventListener("DOMContentLoaded", function() {
             const header = section.previousElementSibling;
             if (!header) return;
             
+            let toggleIcon = header.querySelector('.toggle-icon');
+            let headerContent = header.querySelector('.header-content');
             if (!header.dataset.originalText) {
-                header.dataset.originalText = header.innerText;
+                header.dataset.originalText = headerContent ? headerContent.textContent : header.innerText;
             }
             
-            let arrow = header.innerText.trim().charAt(0);
-            if (arrow !== '▶' && arrow !== '▼') arrow = '▶';
+            let arrow = toggleIcon ? toggleIcon.textContent.trim() : header.innerText.trim().charAt(0);
+            if (arrow !== '+' && arrow !== '-') arrow = '+';
             
             if (isFiltering) {
                 // Keep header visible and show filtered count (even when zero)
                 header.style.display = "";
-                header.innerText = `${arrow} ${sectionName} (${totalMatches})`;
+                if (toggleIcon && headerContent) {
+                    toggleIcon.textContent = arrow;
+                    headerContent.textContent = `${sectionName} (${totalMatches})`;
+                } else {
+                    header.innerText = `${arrow} ${sectionName} (${totalMatches})`;
+                }
             } else {
                 // When no filtering, restore original text and show section
                 header.style.display = "";
                 const origText = header.dataset.originalText;
-                header.innerText = origText.replace(/^[▶▼]\s*/, `${arrow} `);
+                if (toggleIcon && headerContent) {
+                    toggleIcon.textContent = arrow;
+                    headerContent.textContent = origText;
+                } else {
+                    header.innerText = origText.replace(/^[+\-]\s*/, `${arrow} `);
+                }
             }
         }
 
@@ -1133,9 +1151,12 @@ document.addEventListener("DOMContentLoaded", function() {
         let totalChannelMatches = 0;
 
         teamHeaders.forEach(header => {
-            // Store original header text
+            // Store original header text (without the toggle icon)
             if (!header.dataset.originalText) {
-                header.dataset.originalText = header.innerText;
+                const hc = header.querySelector('.header-content');
+                const raw = hc ? hc.textContent : header.innerText;
+                header.dataset.originalText = raw;
+                header.dataset.baseLabel = raw.replace(/\s*\(\d+\)\s*$/, '');
             }
             
             const teamDiv = header.nextElementSibling;
@@ -1211,9 +1232,12 @@ document.addEventListener("DOMContentLoaded", function() {
             }
 
             // Update team header and visibility
-            let arrow = header.innerText.trim().charAt(0);
-            if (arrow !== '▶' && arrow !== '▼') arrow = '▶';
-            const origText = header.dataset.originalText.replace(/^[▶▼]\s*/, '').replace(/\s*\(\d+\)$/, '');
+            let toggleIcon = header.querySelector('.toggle-icon');
+            let headerContent = header.querySelector('.header-content');
+            let arrow = toggleIcon ? toggleIcon.textContent.trim() : header.innerText.trim().charAt(0);
+            if (arrow !== '+' && arrow !== '-') arrow = '+';
+            const baseLabel = (header.dataset.baseLabel || header.dataset.originalText || '').replace(/^[+\-]\s*/, '').replace(/\s*\(\d+\)\s*$/, '');
+            const originalLabel = header.dataset.originalText || baseLabel;
             
             if (isFiltering) {
                 // When filtering, show filtered count and hide team if no matches
@@ -1223,7 +1247,12 @@ document.addEventListener("DOMContentLoaded", function() {
                         const expanded = header.dataset.expanded === "true";
                         teamDiv.style.display = expanded ? "" : "none";
                     }
-                    header.innerText = `${arrow} ${origText} (${teamMatchCount})`;
+                    if (toggleIcon && headerContent) {
+                        toggleIcon.textContent = arrow;
+                        headerContent.textContent = `${baseLabel} (${teamMatchCount})`;
+                    } else {
+                        header.innerText = `${arrow} ${baseLabel} (${teamMatchCount})`;
+                    }
                 } else {
                     header.style.display = "none";
                     if (teamDiv) teamDiv.style.display = "none";
@@ -1235,8 +1264,13 @@ document.addEventListener("DOMContentLoaded", function() {
                     const expanded = header.dataset.expanded === "true";
                     teamDiv.style.display = expanded ? "" : "none";
                 }
-                const desiredArrow = header.dataset.expanded === "true" ? '▼' : '▶';
-                header.innerText = header.dataset.originalText.replace(/^[▶▼]\s*/, `${desiredArrow} `);
+                const desiredArrow = header.dataset.expanded === "true" ? '-' : '+';
+                if (toggleIcon && headerContent) {
+                    toggleIcon.textContent = desiredArrow;
+                    headerContent.textContent = originalLabel;
+                } else {
+                    header.innerText = originalLabel.replace(/^[+\-]\s*/, `${desiredArrow} `);
+                }
             }
 
             totalChannelMatches += teamMatchCount;
@@ -1246,20 +1280,31 @@ document.addEventListener("DOMContentLoaded", function() {
         if (channelHeader) {
             // Store original channel header text
             if (!channelHeader.dataset.originalText) {
-                channelHeader.dataset.originalText = channelHeader.innerText;
+                const hc = channelHeader.querySelector('.header-content');
+                const raw = hc ? hc.textContent : channelHeader.innerText;
+                channelHeader.dataset.originalText = raw;
+                channelHeader.dataset.baseLabel = raw.replace(/\s*\(\d+\)\s*$/, '') || "Channel Chats";
             }
             if (!channelHeader.dataset.expanded) {
                 channelHeader.dataset.expanded = channelSection && channelSection.style.display !== "none" ? "true" : "false";
             }
             
-            let arrow = channelHeader.innerText.trim().charAt(0);
-            if (arrow !== '▶' && arrow !== '▼') arrow = '▶';
-            const name = "Channel Chats";
+            let toggleIcon = channelHeader.querySelector('.toggle-icon');
+            let headerContent = channelHeader.querySelector('.header-content');
+            let arrow = toggleIcon ? toggleIcon.textContent.trim() : channelHeader.innerText.trim().charAt(0);
+            if (arrow !== '+' && arrow !== '-') arrow = '+';
+            const baseLabel = channelHeader.dataset.baseLabel || "Channel Chats";
+            const originalLabel = channelHeader.dataset.originalText || baseLabel;
             
             if (isFiltering) {
                 // Keep header visible and show filtered count (even when zero)
                 channelHeader.style.display = "";
-                channelHeader.innerText = `${arrow} ${name} (${totalChannelMatches})`;
+                if (toggleIcon && headerContent) {
+                    toggleIcon.textContent = arrow;
+                    headerContent.textContent = `${baseLabel} (${totalChannelMatches})`;
+                } else {
+                    channelHeader.innerText = `${arrow} ${baseLabel} (${totalChannelMatches})`;
+                }
                 if (channelSection) {
                     const expanded = channelHeader.dataset.expanded === "true";
                     // Hide section body when zero matches to avoid empty space
@@ -1272,9 +1317,14 @@ document.addEventListener("DOMContentLoaded", function() {
                     const expanded = channelHeader.dataset.expanded === "true";
                     channelSection.style.display = expanded ? "" : "none";
                 }
-                const desiredArrow = channelHeader.dataset.expanded === "true" ? '▼' : '▶';
-                const origText = channelHeader.dataset.originalText;
-                channelHeader.innerText = origText.replace(/^[▶▼]\s*/, `${desiredArrow} `);
+                const desiredArrow = channelHeader.dataset.expanded === "true" ? '-' : '+';
+                const origText = originalLabel;
+                if (toggleIcon && headerContent) {
+                    toggleIcon.textContent = desiredArrow;
+                    headerContent.textContent = origText;
+                } else {
+                    channelHeader.innerText = origText.replace(/^[+\-]\s*/, `${desiredArrow} `);
+                }
                 // Make updateSearch available globally so toggle functions can call it
                 window.updateSearch = updateSearch;
             }
@@ -1592,7 +1642,12 @@ document.addEventListener("DOMContentLoaded", function() {
                 sec.style.display = 'none';
                 const header = sec.previousElementSibling;
                 if (header && header.classList.contains('sidebar-section-header')) {
-                    header.innerHTML = header.innerHTML.replace('▼', '▶');
+                    var toggleIcon = header.querySelector('.toggle-icon');
+                    if (toggleIcon) {
+                        toggleIcon.textContent = '+';
+                    } else {
+                        header.innerHTML = header.innerHTML.replace('-', '+');
+                    }
                     header.dataset.expanded = "false";
                 }
             });
@@ -1909,7 +1964,12 @@ function toggleSection(sectionId) {
     var header = section.previousElementSibling;
     var isOpening = section.style.display === "none";
     section.style.display = isOpening ? "block" : "none";
-    header.innerHTML = header.innerHTML.replace(isOpening ? '▶' : '▼', isOpening ? '▼' : '▶');
+    var toggleIcon = header.querySelector('.toggle-icon');
+    if (toggleIcon) {
+        toggleIcon.textContent = isOpening ? '-' : '+';
+    } else {
+        header.innerHTML = header.innerHTML.replace(isOpening ? '+' : '-', isOpening ? '-' : '+');
+    }
     header.dataset.expanded = isOpening ? "true" : "false";
 }
 
@@ -1980,8 +2040,11 @@ document.addEventListener("DOMContentLoaded", function() {
         sec.style.display = "none";
     });
     document.querySelectorAll('.sidebar-section-header').forEach(function(header) {
-        if (!header.innerHTML.trim().startsWith('▶')) {
-            header.innerHTML = '▶ ' + header.innerHTML.trim().replace(/^▼|▶/, '');
+        var toggleIcon = header.querySelector('.toggle-icon');
+        if (toggleIcon) {
+            toggleIcon.textContent = '+';
+        } else if (!header.innerHTML.trim().startsWith('+')) {
+            header.innerHTML = '+ ' + header.innerHTML.trim().replace(/^[\-+]/, '');
         }
     });
 });
@@ -2016,7 +2079,7 @@ document.addEventListener("DOMContentLoaded", function() {
   </div>
   
   <!-- Advanced Filters Toggle -->
-  <button onclick="toggleAdvancedFilters()" style="width: 100%; padding: 8px; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); color: var(--sidebar-text); border-radius: 6px; cursor: pointer; font-size: 0.9em; margin-bottom: 10px; transition: all 0.2s;">⚙️ Advanced Filters <span id="advFilterToggleIcon">▶</span></button>
+    <button onclick="toggleAdvancedFilters()" style="width: 100%; padding: 8px; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); color: var(--sidebar-text); border-radius: 6px; cursor: pointer; font-size: 0.9em; margin-bottom: 10px; transition: all 0.2s;">⚙️ Advanced Filters <span id="advFilterToggleIcon">+</span></button>
   
   <!-- Advanced Filters Panel -->
   <div id="advancedFiltersPanel" style="display: none; padding: 10px; background: var(--sidebar-hover); border-radius: 6px; border: 1px solid var(--sidebar-border); margin-bottom: 10px;">

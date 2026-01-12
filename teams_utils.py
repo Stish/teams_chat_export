@@ -5,7 +5,7 @@ This module contains utility functions for processing Microsoft Teams chat expor
 including message processing, image handling, and API interactions.
 
 Author: Alexander Wegner
-Version: v0.1.5
+Version: v0.1.5.1
 """
 
 
