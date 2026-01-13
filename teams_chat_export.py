@@ -22,7 +22,7 @@ Usage:
     python teams_chat_export.py
 
 Author: Alexander Wegner
-Version: v0.1.5.1
+Version: v0.1.6
 """
 
 import os
@@ -40,13 +40,14 @@ from config import (
     GRAPH_API_BASE_URL, ITEMS_PER_PAGE, OUTPUT_HTML_FILE,
     CHAT_TYPE_ONE_ON_ONE, CHAT_TYPE_GROUP, CHAT_TYPE_MEETING, MESSAGE_TYPE_USER,
     MAX_MEMBERS_IN_CHAT_NAME, IGNORED_CHANNELS, IGNORED_CHATS,
-    MESSAGES_LIMIT_PER_CHAT, CHATS_LIMIT, CHANNELS_LIMIT_PER_TEAM
+    MESSAGES_LIMIT_PER_CHAT, CHATS_LIMIT, CHANNELS_LIMIT_PER_TEAM, DOWNLOAD_IMAGES,
+    MESSAGE_DATE_FROM, MESSAGE_DATE_TO
 )
 from html_template import html_content, NAVIGATION_BUTTONS_HTML
 from teams_utils import (
     get_api_headers, chat_has_messages, sort_chats_by_name, process_message_content,
     format_timestamp, create_member_list_display, format_member_list_for_display,
-    validate_message_content
+    validate_message_content, is_message_in_date_range
 )
 
 
@@ -509,9 +510,19 @@ class TeamsExporter:
         Returns:
             str: HTML content for the sidebar section
         """
+        # Filter out chats with 0 messages if message counts are provided
+        filtered_chats = {}
+        for chat_name, chat_id in chats.items():
+            if message_counts is None or message_counts.get(chat_name, 0) > 0:
+                filtered_chats[chat_name] = chat_id
+        
+        # If no chats with messages, return empty string (skip this section)
+        if not filtered_chats:
+            return ''
+        
         header_title = title
         if message_counts is not None:
-            total_count = sum(message_counts.values())
+            total_count = sum(message_counts.get(name, 0) for name in filtered_chats.keys())
             header_title = f"{title} ({total_count})"
 
         # Add category hint classes/attributes for styling and icons
@@ -521,7 +532,7 @@ class TeamsExporter:
     <div id="{section_id}" class="sidebar-section-content" style="display:none;">
 '''
         
-        for chat_name, chat_id in chats.items():
+        for chat_name, chat_id in filtered_chats.items():
             safe_chat_name = urllib.parse.quote(str(chat_name or ''), safe='')
             tooltip = ""
             
@@ -572,7 +583,7 @@ class TeamsExporter:
             
             # Process message content
             clean_content = process_message_content(
-                raw_content, message_id, self.access_token, self.image_folder
+                raw_content, message_id, self.access_token, self.image_folder, DOWNLOAD_IMAGES
             )
             
             # Skip messages with no content after processing
@@ -826,7 +837,8 @@ class TeamsExporter:
             if sender == 'Unknown':
                 continue
                 
-            raw_content = msg.get('body', {}).get('content', '')
+            body = msg.get('body') or {}
+            raw_content = body.get('content') or ''
             if not raw_content or not raw_content.strip():
                 continue
                 
@@ -838,23 +850,40 @@ class TeamsExporter:
                 (raw_stripped.startswith('<attachment id=') and raw_stripped.endswith('</attachment>') and len(raw_stripped) < 100) or
                 re.match(r'^<attachment id="[^"]*"></attachment>$', raw_stripped)):
                 continue
+            
+            # Apply date range filter
+            if not is_message_in_date_range(msg, MESSAGE_DATE_FROM, MESSAGE_DATE_TO):
+                continue
                 
             filtered_messages.append(msg)
         
-        # Generate HTML for each valid message
-        last_date_label = None
+        # First pass: generate all message HTML and filter out empty ones
+        messages_with_html = []
+        skipped_count = 0
         for msg in filtered_messages:
-            timestamp = msg.get('createdDateTime') or msg.get('lastModifiedDateTime', '')
-            date_label = self._get_date_label(timestamp)
+            message_html = self._generate_message_html(msg, chat_type)
+            if message_html.strip():  # Only keep messages with non-empty HTML
+                # Use lastModifiedDateTime if available, otherwise fall back to createdDateTime
+                timestamp = msg.get('lastModifiedDateTime') or msg.get('createdDateTime', '')
+                date_label = self._get_date_label(timestamp)
+                messages_with_html.append((date_label, message_html))
+            else:
+                skipped_count += 1
+
+        # Second pass: add date separators only for messages that will actually be displayed
+        last_date_label = None
+        added_message_count = 0
+        for date_label, message_html in messages_with_html:
             if date_label != last_date_label:
                 html += f'<div class="date-separator"><span>{date_label}</span></div>'
                 last_date_label = date_label
-            message_html = self._generate_message_html(msg, chat_type)
-            if message_html.strip():  # Only add non-empty HTML
-                html += message_html
+            html += message_html
+            added_message_count += 1
 
+        if skipped_count > 0:
+            print(f'#   Skipped {skipped_count} empty messages in {chat_name}')
         html += '</div>\n'
-        return html, len(filtered_messages)
+        return html, added_message_count
 
     def _generate_channel_html(self, team_name: str, channel_name: str, messages: List[Dict]) -> Tuple[str, int]:
         """
@@ -898,7 +927,8 @@ class TeamsExporter:
                 if sender == 'Unknown':
                     continue
                     
-                raw_content = msg.get('body', {}).get('content', '')
+                body = msg.get('body') or {}
+                raw_content = body.get('content') or ''
                 if not raw_content or not raw_content.strip():
                     continue
                     
@@ -910,23 +940,40 @@ class TeamsExporter:
                     (raw_stripped.startswith('<attachment id=') and raw_stripped.endswith('</attachment>') and len(raw_stripped) < 100) or
                     re.match(r'^<attachment id="[^"]*"></attachment>$', raw_stripped)):
                     continue
+                
+                # Apply date range filter
+                if not is_message_in_date_range(msg, MESSAGE_DATE_FROM, MESSAGE_DATE_TO):
+                    continue
                     
                 filtered_messages.append(msg)
         
-        # Generate HTML for each valid message
-        last_date_label = None
+        # First pass: generate all message HTML and filter out empty ones
+        messages_with_html = []
+        skipped_count = 0
         for msg in filtered_messages:
-            timestamp = msg.get('createdDateTime') or msg.get('lastModifiedDateTime', '')
-            date_label = self._get_date_label(timestamp)
+            # Use lastModifiedDateTime if available, otherwise fall back to createdDateTime
+            timestamp = msg.get('lastModifiedDateTime') or msg.get('createdDateTime', '')
+            message_html = self._generate_message_html(msg, 'channel')
+            if message_html.strip():  # Only keep messages with non-empty HTML
+                date_label = self._get_date_label(timestamp)
+                messages_with_html.append((date_label, message_html))
+            else:
+                skipped_count += 1
+
+        # Second pass: add date separators only for messages that will actually be displayed
+        last_date_label = None
+        added_message_count = 0
+        for date_label, message_html in messages_with_html:
             if date_label != last_date_label:
                 html += f'<div class="date-separator"><span>{date_label}</span></div>'
                 last_date_label = date_label
-            message_html = self._generate_message_html(msg, 'channel')
-            if message_html.strip():  # Only add non-empty HTML
-                html += message_html
+            html += message_html
+            added_message_count += 1
         
+        if skipped_count > 0:
+            print(f'#   Skipped {skipped_count} empty messages in {team_name}/{channel_name}')
         html += '</div>\n'
-        return html, len(filtered_messages)
+        return html, added_message_count
     
     def generate_html_export(self):
         """Generate the complete HTML export."""
@@ -976,26 +1023,35 @@ class TeamsExporter:
         )
 
         total_channel_messages = sum(self.channel_message_counts.values())
-        channel_header_title = f"Channel Chats ({total_channel_messages})"
-        sidebar_html += f"  <div class=\"sidebar-section-header top-header channel-section-header\" data-cat=\"channel\" onclick=\"toggleSection('channel-section')\"><div class=\"header-content\">{channel_header_title}</div><span class=\"toggle-icon\">+</span></div>\n"
-        sidebar_html += '  <div id="channel-section" class="sidebar-section-content" style="display:none;">\n'
+        
+        # Only show Channel Chats section if there are messages
+        if total_channel_messages > 0:
+            channel_header_title = f"Channel Chats ({total_channel_messages})"
+            sidebar_html += f"  <div class=\"sidebar-section-header top-header channel-section-header\" data-cat=\"channel\" onclick=\"toggleSection('channel-section')\"><div class=\"header-content\">{channel_header_title}</div><span class=\"toggle-icon\">+</span></div>\n"
+            sidebar_html += '  <div id="channel-section" class="sidebar-section-content" style="display:none;">\n'
 
-        for team_name, channels in self.channels_by_team.items():
-            safe_team_id = urllib.parse.quote(str(team_name or ''), safe='')
-            team_count = sum(self.channel_message_counts.get((team_name, ch_name), 0) for ch_name, _, _ in channels)
-            team_header = f"{team_name} ({team_count})"
-            sidebar_html += f'    <div class="sidebar-section-header" onclick="toggleSection(\'team-{safe_team_id}\')"><div class="header-content">{team_header}</div><span class="toggle-icon">+</span></div>\n'
-            sidebar_html += f'    <div id="team-{safe_team_id}" class="sidebar-section-content" style="display:none;">\n'
+            for team_name, channels in self.channels_by_team.items():
+                safe_team_id = urllib.parse.quote(str(team_name or ''), safe='')
+                team_count = sum(self.channel_message_counts.get((team_name, ch_name), 0) for ch_name, _, _ in channels)
+                
+                # Only show team if it has messages
+                if team_count > 0:
+                    team_header = f"{team_name} ({team_count})"
+                    sidebar_html += f'    <div class="sidebar-section-header" onclick="toggleSection(\'team-{safe_team_id}\')"><div class="header-content">{team_header}</div><span class="toggle-icon">+</span></div>\n'
+                    sidebar_html += f'    <div id="team-{safe_team_id}" class="sidebar-section-content" style="display:none;">\n'
 
-            for channel_name, team_id, channel_id in channels:
-                safe_channel_id = urllib.parse.quote(f"{team_name or ''}|||{channel_name or ''}", safe='')
-                channel_count = self.channel_message_counts.get((team_name, channel_name), 0)
-                count_suffix = f" ({channel_count})"
-                sidebar_html += f'      <a href="#" onclick="showChat(\'{safe_channel_id}\')" data-chat-name="{channel_name}">{channel_name}{count_suffix}</a>\n'
+                    for channel_name, team_id, channel_id in channels:
+                        channel_count = self.channel_message_counts.get((team_name, channel_name), 0)
+                        
+                        # Only show channel if it has messages
+                        if channel_count > 0:
+                            safe_channel_id = urllib.parse.quote(f"{team_name or ''}|||{channel_name or ''}", safe='')
+                            count_suffix = f" ({channel_count})"
+                            sidebar_html += f'      <a href="#" onclick="showChat(\'{safe_channel_id}\')" data-chat-name="{channel_name}">{channel_name}{count_suffix}</a>\n'
 
-            sidebar_html += '    </div>\n'
+                    sidebar_html += '    </div>\n'
 
-        sidebar_html += '  </div>\n'
+            sidebar_html += '  </div>\n'
         sidebar_html += '</div>\n'
 
         export_html += sidebar_html

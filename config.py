@@ -5,7 +5,7 @@ This file contains all configuration parameters and constants used by the Teams 
 Modify these values according to your needs.
 
 Author: Alexander Wegner
-Version: v0.1.5.1
+Version: v0.1.6
 """
 
 # =============================================================================
@@ -30,12 +30,17 @@ OUTPUT_FOLDER = 'C:\\work\\_scripts\\py\\teams_chat_export\\output\\'
 # Image folder name (relative to output folder)
 IMAGE_FOLDER = 'img'
 
+# Download images from messages (set to False to use placeholder images instead)
+# When True: Images are downloaded and embedded in the export
+# When False: Images are replaced with a placeholder/dummy image with a message indicating they were not downloaded
+DOWNLOAD_IMAGES = True
+
 # =============================================================================
 # SCRIPT CONFIGURATION
 # =============================================================================
 
 # Script version
-SCRIPT_VERSION = 'v0.1.5.1'
+SCRIPT_VERSION = 'v0.1.6'
 
 # =============================================================================
 # API CONFIGURATION
@@ -97,6 +102,21 @@ CHATS_LIMIT = None  # Examples: 5, 10, 20, or None for unlimited
 CHANNELS_LIMIT_PER_TEAM = None # Examples: 3, 5, 10, or None for unlimited
 
 # =============================================================================
+# MESSAGE DATE RANGE CONFIGURATION
+# =============================================================================
+
+# Filter messages by date range (optional)
+# Format: "YYYY-MM-DD" or None for no date limit
+# Only messages within the specified date range will be included in the export
+# 
+# Examples:
+# - Both dates set: Only messages between these dates (inclusive) will be exported
+# - Only MESSAGE_DATE_FROM set: All messages from this date onwards will be exported
+# - Only MESSAGE_DATE_TO set: All messages up to and including this date will be exported
+# - Both None: No date filtering, all messages exported (default)
+#
+MESSAGE_DATE_FROM = "2025-01-01" # e.g., "2024-01-15" or None for no lower limit
+MESSAGE_DATE_TO = "2025-12-31" # e.g., "2024-12-31" or None for no upper limit
 # IGNORE LIST CONFIGURATION
 # =============================================================================
 

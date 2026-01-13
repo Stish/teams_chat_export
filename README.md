@@ -102,7 +102,7 @@ requests>=2.25.0
 
 ### 1. Clone or Download
 ```bash
-git clone https://github.com/Stish/teams_chat_export.git
+git clone <repository-url>
 # OR download the ZIP file and extract it
 ```
 
@@ -148,6 +148,13 @@ ACCESS_TOKEN = 'your_access_token_here'
 # Update output folder path (optional)
 OUTPUT_FOLDER = 'C:\\your\\desired\\output\\path\\'
 
+# Configure date range filtering (optional)
+MESSAGE_DATE_FROM = "2024-01-01"  # Start date (YYYY-MM-DD) or None for no limit
+MESSAGE_DATE_TO = "2024-12-31"    # End date (YYYY-MM-DD) or None for no limit
+
+# Configure image download behavior (optional)
+DOWNLOAD_IMAGES = True  # Set to False to use placeholder images instead
+
 # Configure ignore lists (optional)
 IGNORED_CHANNELS = [
     ("Team Name", "Channel Name"),  # Channels to skip
@@ -162,10 +169,62 @@ IGNORED_CHATS = [
 
 - **Access Token**: The script will automatically detect your user display name from the token
 - **Paths**: Use absolute paths for `OUTPUT_FOLDER` to avoid issues
+- **Date Range**: Filter messages by date range using `MESSAGE_DATE_FROM` and `MESSAGE_DATE_TO` (format: "YYYY-MM-DD" or None)
+- **Image Downloads**: Set `DOWNLOAD_IMAGES = False` to use placeholder images and reduce export time/size
 - **Ignore Lists**: Use these to skip large or unimportant channels/chats
 - **Case Sensitivity**: Team/channel names in ignore lists are case-sensitive
 
-### 4. Testing Configuration (Optional)
+### 4. Optional Configuration Features
+
+#### Date Range Filtering
+
+Filter messages by date to export only messages within a specific time period:
+
+```python
+# Export only messages from November 2024
+MESSAGE_DATE_FROM = "2024-11-01"  # Start date (inclusive)
+MESSAGE_DATE_TO = "2024-11-30"    # End date (inclusive)
+
+# Export all messages from a specific date onwards
+MESSAGE_DATE_FROM = "2024-01-01"
+MESSAGE_DATE_TO = None
+
+# Export all messages up to a specific date
+MESSAGE_DATE_FROM = None
+MESSAGE_DATE_TO = "2024-12-31"
+
+# No date filtering (default - export all messages)
+MESSAGE_DATE_FROM = None
+MESSAGE_DATE_TO = None
+```
+
+**Benefits:**
+- Faster exports when you only need recent messages
+- Smaller file sizes
+- Images outside date range won't be downloaded
+
+#### Image Download Toggle
+
+Control whether images are downloaded and embedded:
+
+```python
+# Download all images (default)
+DOWNLOAD_IMAGES = True
+
+# Use placeholder images instead
+DOWNLOAD_IMAGES = False
+```
+
+**When to use `DOWNLOAD_IMAGES = False`:**
+- Faster export times (no image downloads)
+- Smaller output file size
+- Testing/previewing export structure
+- Internet connectivity issues
+- Storage space concerns
+
+**Note:** Placeholder images will display with a message indicating images were not downloaded.
+
+#### Testing Limits
 
 For faster testing and development, you can limit the number of messages and chats processed:
 
@@ -183,7 +242,7 @@ CHANNELS_LIMIT_PER_TEAM = None  # Examples: 3, 5, 10, or None for unlimited
 
 **Examples:**
 - For quick testing: `CHATS_LIMIT = 3`, `MESSAGES_LIMIT_PER_CHAT = 50`, and `CHANNELS_LIMIT_PER_TEAM = 3`
-- For full export: Set both to `None`
+- For full export: Set all to `None`
 
 ## 📖 Usage
 
@@ -201,7 +260,7 @@ CHANNELS_LIMIT_PER_TEAM = None  # Examples: 3, 5, 10, or None for unlimited
 
 ```
 ### Microsoft Teams Chat Export Started
-Script Version: v0.1.5.1
+Script Version: v0.1.6
 ✅ Fetched user display name: Your Name
 ✅ Access token valid - authenticated as: Your Name
 ##  Fetching all chats
@@ -395,8 +454,7 @@ This project is provided as-is for educational and personal use. Please ensure y
 
 ---
 
-**Version**: v0.1.5.1  
+**Version**: v0.1.5.1
 **Last Updated**: January 2026  
 **Tested with**: Microsoft Teams Web, Desktop App  
 **Python Compatibility**: 3.6+
-

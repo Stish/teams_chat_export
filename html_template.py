@@ -20,8 +20,8 @@ Structure:
 - HTML: Base structure with placeholders for dynamic content
 
 Author: Alexander Wegner
-Version: v0.1.5.1
-Last Updated: 2026-01-09
+Version: v0.1.6
+Last Updated: 2026-01-12
 """
 
 # =============================================================================
@@ -214,6 +214,7 @@ a.lightbox { text-decoration: none; }
 #lightbox-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center;
+    z-index: 9999;
 }
 #lightbox-overlay img {
     max-width: 90%; max-height: 90%;
@@ -693,10 +694,16 @@ document.addEventListener("DOMContentLoaded", function() {
             const img = overlay.querySelector("img");
             img.src = this.href;
             overlay.style.display = "flex";
+            // Hide export toolbar when lightbox is open
+            const toolbar = document.getElementById('export-toolbar');
+            if (toolbar) toolbar.style.display = 'none';
         });
     });
     overlay.addEventListener("click", function() {
         overlay.style.display = "none";
+        // Show export toolbar when lightbox is closed
+        const toolbar = document.getElementById('export-toolbar');
+        if (toolbar) toolbar.style.display = 'flex';
     });
 });
 </script>
@@ -782,6 +789,7 @@ function updateActiveFilters() {
     var codeOnlyCheckbox = document.getElementById('codeOnlyCheckbox');
     var dateFromInput = document.getElementById('dateFromInput');
     var dateToInput = document.getElementById('dateToInput');
+    var dateRangeOnlyCheckbox = document.getElementById('dateRangeOnlyCheckbox');
     
     if (searchInput && searchInput.value) {
         filters.push({ text: '🔍 ' + searchInput.value, type: 'search' });
@@ -795,11 +803,14 @@ function updateActiveFilters() {
     if (codeOnlyCheckbox && codeOnlyCheckbox.checked) {
         filters.push({ text: '💻 Code only', type: 'code' });
     }
-    if (dateFromInput && dateFromInput.value) {
-        filters.push({ text: '📅 From: ' + dateFromInput.value, type: 'dateFrom' });
-    }
-    if (dateToInput && dateToInput.value) {
-        filters.push({ text: '📅 To: ' + dateToInput.value, type: 'dateTo' });
+    // Only show date filters if the "Apply date filter" checkbox is checked
+    if (dateRangeOnlyCheckbox && dateRangeOnlyCheckbox.checked) {
+        if (dateFromInput && dateFromInput.value) {
+            filters.push({ text: '📅 From: ' + dateFromInput.value, type: 'dateFrom' });
+        }
+        if (dateToInput && dateToInput.value) {
+            filters.push({ text: '📅 To: ' + dateToInput.value, type: 'dateTo' });
+        }
     }
     
     if (filters.length > 0) {
@@ -828,6 +839,8 @@ function clearAllFilters() {
     document.getElementById('imageOnlyCheckbox').checked = false;
     var codeOnlyCheckbox = document.getElementById('codeOnlyCheckbox');
     if (codeOnlyCheckbox) codeOnlyCheckbox.checked = false;
+    var dateRangeOnlyCheckbox = document.getElementById('dateRangeOnlyCheckbox');
+    if (dateRangeOnlyCheckbox) dateRangeOnlyCheckbox.checked = false;
     
     // Reset button styles for quick filter tags
     var imageFilterBtn = document.getElementById('imageFilterBtn');
@@ -980,17 +993,28 @@ document.addEventListener("DOMContentLoaded", function() {
         
         // Date range filter
         let dateOk = true;
-        if (dateFrom || dateTo) {
+        if ((dateFrom || dateTo) && !msg.dataset.msgDate) {
             const metaEl = msg.querySelector('.meta');
             if (metaEl) {
                 // Extract timestamp from meta text (format: "Sender • YYYY-MM-DD HH:MM:SS")
                 const metaText = metaEl.textContent;
                 const dateMatch = metaText.match(/(\d{4}-\d{2}-\d{2})/);
                 if (dateMatch) {
-                    const msgDate = new Date(dateMatch[1]);
-                    if (dateFrom && msgDate < dateFrom) dateOk = false;
-                    if (dateTo && msgDate > dateTo) dateOk = false;
+                    // Cache the parsed date on the message element
+                    msg.dataset.msgDate = dateMatch[1];
+                } else {
+                    msg.dataset.msgDate = '';
                 }
+            }
+        }
+        
+        if ((dateFrom || dateTo) && msg.dataset.msgDate) {
+            const msgDate = new Date(msg.dataset.msgDate + 'T00:00:00Z');
+            if (isNaN(msgDate.getTime())) {
+                dateOk = true; // Invalid date, show message
+            } else {
+                if (dateFrom && msgDate < dateFrom) dateOk = false;
+                if (dateTo && msgDate > dateTo) dateOk = false;
             }
         }
         
@@ -1006,15 +1030,24 @@ document.addEventListener("DOMContentLoaded", function() {
         const imageOnly = imageOnlyCheckbox.checked;
         const codeOnly = codeOnlyCheckbox.checked;
         
-        // Get date range values
+        // Get date range values - only use them if checkbox is checked
         const dateFromInput = document.getElementById('dateFromInput');
         const dateToInput = document.getElementById('dateToInput');
         const dateRangeOnlyCheckbox = document.getElementById('dateRangeOnlyCheckbox');
-        const rawDateFrom = dateFromInput && dateFromInput.value ? new Date(dateFromInput.value) : null;
-        const rawDateTo = dateToInput && dateToInput.value ? new Date(dateToInput.value + 'T23:59:59') : null;
-        const useDateFilter = (dateRangeOnlyCheckbox ? dateRangeOnlyCheckbox.checked : false) && (rawDateFrom || rawDateTo);
-        const dateFrom = useDateFilter ? rawDateFrom : null;
-        const dateTo = useDateFilter ? rawDateTo : null;
+        const isDateFilterChecked = dateRangeOnlyCheckbox && dateRangeOnlyCheckbox.checked;
+        
+        // Only parse dates if checkbox is checked - use UTC to avoid timezone issues
+        let dateFrom = null;
+        let dateTo = null;
+        if (isDateFilterChecked && dateFromInput && dateFromInput.value) {
+            dateFrom = new Date(dateFromInput.value + 'T00:00:00Z');
+            if (isNaN(dateFrom.getTime())) dateFrom = null;
+        }
+        if (isDateFilterChecked && dateToInput && dateToInput.value) {
+            dateTo = new Date(dateToInput.value + 'T23:59:59Z');
+            if (isNaN(dateTo.getTime())) dateTo = null;
+        }
+        const useDateFilter = isDateFilterChecked && (dateFrom !== null || dateTo !== null);
         
         const isFiltering = query !== "" || imageOnly || codeOnly || senderQuery !== "" || useDateFilter;
 
@@ -1073,17 +1106,39 @@ document.addEventListener("DOMContentLoaded", function() {
                     });
 
                     // Hide date separators that have no visible messages beneath them
-                    sectionDiv.querySelectorAll('.date-separator').forEach(sep => {
-                        let hasVisibleAfter = false;
-                        let node = sep.nextElementSibling;
-                        while (node && !hasVisibleAfter) {
-                            if (node.classList && node.classList.contains('date-separator')) break;
-                            if (node.classList && node.classList.contains('clearfix')) {
-                                if (node.style.display !== 'none') hasVisibleAfter = true;
+                    // Cache separator check results to avoid repeated DOM traversals
+                    const allSeparators = Array.from(sectionDiv.querySelectorAll('.date-separator'));
+                    
+                    // Use requestAnimationFrame to batch DOM updates
+                    requestAnimationFrame(() => {
+                        allSeparators.forEach(sep => {
+                            // Check if there are ANY visible messages after this separator (before the next separator)
+                            let hasVisibleAfter = false;
+                            let node = sep.nextElementSibling;
+                            let checkCount = 0;
+                            const maxChecks = 100; // Prevent infinite checks
+                            
+                            while (node && !hasVisibleAfter && checkCount < maxChecks) {
+                                checkCount++;
+                                
+                                // Stop if we hit another date separator - no need to check further
+                                if (node.classList && node.classList.contains('date-separator')) {
+                                    break;
+                                }
+                                
+                                // Check if this is a visible message wrapper (clearfix)
+                                if (node.classList && node.classList.contains('clearfix')) {
+                                    if (node.style.display !== 'none') {
+                                        hasVisibleAfter = true;
+                                    }
+                                }
+                                
+                                node = node.nextElementSibling;
                             }
-                            node = node.nextElementSibling;
-                        }
-                        sep.style.display = hasVisibleAfter ? "" : "none";
+                            
+                            // Show separator only if there's at least one visible message after it
+                            sep.style.display = hasVisibleAfter ? "" : "none";
+                        });
                     });
 
                     if (isFiltering) {
@@ -1091,47 +1146,60 @@ document.addEventListener("DOMContentLoaded", function() {
                         if (matchCount > 0) {
                             link.style.display = "";
                             link.innerText = link.getAttribute("data-chat-name") + ` (${matchCount})`;
+                            totalMatches += matchCount;
                         } else {
                             link.style.display = "none";
                         }
                     } else {
                         // When no filtering, restore original text with permanent counts
+                        // Ensure display is visible for all links (they were filtered server-side already)
                         link.style.display = "";
-                        link.innerText = link.dataset.originalText;
+                        if (link.dataset.originalText) {
+                            link.innerText = link.dataset.originalText;
+                        }
                     }
-
-                    totalMatches += matchCount;
                 } catch (e) {
-                    console.error("Error processing link:", e);
+                    console.error('Error processing link:', e);
                 }
             });
 
-            // Store original header text
+            // Update section header (it's a sibling before the section content)
             const header = section.previousElementSibling;
-            if (!header) return;
+            if (!header || !header.classList.contains('sidebar-section-header')) return;
             
             let toggleIcon = header.querySelector('.toggle-icon');
             let headerContent = header.querySelector('.header-content');
+            
+            // Store original text and extract base label (without count)
             if (!header.dataset.originalText) {
-                header.dataset.originalText = headerContent ? headerContent.textContent : header.innerText;
+                const rawText = headerContent ? headerContent.textContent : header.innerText;
+                header.dataset.originalText = rawText;
+                // Extract base label by removing any trailing count like "(25)"
+                header.dataset.baseLabel = rawText.replace(/\s*\(\d+\)\s*$/, '');
             }
             
             let arrow = toggleIcon ? toggleIcon.textContent.trim() : header.innerText.trim().charAt(0);
             if (arrow !== '+' && arrow !== '-') arrow = '+';
             
+            const baseLabel = header.dataset.baseLabel || sectionName;
+            const origText = header.dataset.originalText;
+            
             if (isFiltering) {
-                // Keep header visible and show filtered count (even when zero)
-                header.style.display = "";
-                if (toggleIcon && headerContent) {
-                    toggleIcon.textContent = arrow;
-                    headerContent.textContent = `${sectionName} (${totalMatches})`;
+                // Keep header visible only if there are matches, otherwise hide it
+                if (totalMatches > 0) {
+                    header.style.display = "";
+                    if (toggleIcon && headerContent) {
+                        toggleIcon.textContent = arrow;
+                        headerContent.textContent = `${baseLabel} (${totalMatches})`;
+                    } else {
+                        header.innerText = `${arrow} ${baseLabel} (${totalMatches})`;
+                    }
                 } else {
-                    header.innerText = `${arrow} ${sectionName} (${totalMatches})`;
+                    header.style.display = "none";
                 }
             } else {
                 // When no filtering, restore original text and show section
                 header.style.display = "";
-                const origText = header.dataset.originalText;
                 if (toggleIcon && headerContent) {
                     toggleIcon.textContent = arrow;
                     headerContent.textContent = origText;
@@ -1195,17 +1263,24 @@ document.addEventListener("DOMContentLoaded", function() {
                         if (show) matchCount++;
                     });
                     // Hide date separators that have no visible messages beneath them
-                    sectionDiv.querySelectorAll('.date-separator').forEach(sep => {
-                        let hasVisibleAfter = false;
-                        let node = sep.nextElementSibling;
-                        while (node && !hasVisibleAfter) {
-                            if (node.classList && node.classList.contains('date-separator')) break;
-                            if (node.classList && node.classList.contains('clearfix')) {
-                                if (node.style.display !== 'none') hasVisibleAfter = true;
+                    const channelSeparators = Array.from(sectionDiv.querySelectorAll('.date-separator'));
+                    requestAnimationFrame(() => {
+                        channelSeparators.forEach(sep => {
+                            let hasVisibleAfter = false;
+                            let node = sep.nextElementSibling;
+                            let checkCount = 0;
+                            const maxChecks = 100; // Prevent infinite checks
+                            
+                            while (node && !hasVisibleAfter && checkCount < maxChecks) {
+                                checkCount++;
+                                if (node.classList && node.classList.contains('date-separator')) break;
+                                if (node.classList && node.classList.contains('clearfix')) {
+                                    if (node.style.display !== 'none') hasVisibleAfter = true;
+                                }
+                                node = node.nextElementSibling;
                             }
-                            node = node.nextElementSibling;
-                        }
-                        sep.style.display = hasVisibleAfter ? "" : "none";
+                            sep.style.display = hasVisibleAfter ? "" : "none";
+                        });
                     });
                 }
 
@@ -1219,8 +1294,11 @@ document.addEventListener("DOMContentLoaded", function() {
                     }
                 } else {
                     // When no filtering, restore original text with permanent counts
+                    // Ensure display is visible for all links (they were filtered server-side already)
                     link.style.display = "";
-                    link.innerText = link.dataset.originalText;
+                    if (link.dataset.originalText) {
+                        link.innerText = link.dataset.originalText;
+                    }
                 }
 
                 teamMatchCount += matchCount;
@@ -1297,18 +1375,22 @@ document.addEventListener("DOMContentLoaded", function() {
             const originalLabel = channelHeader.dataset.originalText || baseLabel;
             
             if (isFiltering) {
-                // Keep header visible and show filtered count (even when zero)
-                channelHeader.style.display = "";
-                if (toggleIcon && headerContent) {
-                    toggleIcon.textContent = arrow;
-                    headerContent.textContent = `${baseLabel} (${totalChannelMatches})`;
+                // Keep header visible only if there are matches, otherwise hide it
+                if (totalChannelMatches > 0) {
+                    channelHeader.style.display = "";
+                    if (toggleIcon && headerContent) {
+                        toggleIcon.textContent = arrow;
+                        headerContent.textContent = `${baseLabel} (${totalChannelMatches})`;
+                    } else {
+                        channelHeader.innerText = `${arrow} ${baseLabel} (${totalChannelMatches})`;
+                    }
+                    if (channelSection) {
+                        const expanded = channelHeader.dataset.expanded === "true";
+                        channelSection.style.display = expanded ? "" : "none";
+                    }
                 } else {
-                    channelHeader.innerText = `${arrow} ${baseLabel} (${totalChannelMatches})`;
-                }
-                if (channelSection) {
-                    const expanded = channelHeader.dataset.expanded === "true";
-                    // Hide section body when zero matches to avoid empty space
-                    channelSection.style.display = totalChannelMatches > 0 && expanded ? "" : "none";
+                    channelHeader.style.display = "none";
+                    if (channelSection) channelSection.style.display = "none";
                 }
             } else {
                 // When no filtering, restore to user's expanded/collapsed state

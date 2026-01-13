@@ -5,7 +5,7 @@ This module contains utility functions for processing Microsoft Teams chat expor
 including message processing, image handling, and API interactions.
 
 Author: Alexander Wegner
-Version: v0.1.5.1
+Version: v0.1.6
 """
 
 
@@ -223,7 +223,7 @@ def sort_chats_by_name(chat_list):
     return sorted(chat_list, key=lambda x: (x[0] or "").lower())
 
 
-def process_message_content(raw_content, message_id, access_token, image_folder):
+def process_message_content(raw_content, message_id, access_token, image_folder, download_images=True):
     """
     Process message content by cleaning HTML, replacing emojis, and handling images.
 
@@ -232,6 +232,7 @@ def process_message_content(raw_content, message_id, access_token, image_folder)
         message_id (str): The unique identifier for the message.
         access_token (str): The bearer token for API authentication.
         image_folder (str): The folder path for saving images.
+        download_images (bool): Whether to download images or use placeholders (default: True).
 
     Returns:
         str: The processed and cleaned message content.
@@ -242,13 +243,18 @@ def process_message_content(raw_content, message_id, access_token, image_folder)
     # Replace emoji tags with their alt text
     clean_content = replace_emoji_tags(clean_content)
 
-    # Process images: download and replace URLs
+    # Process images: download and replace URLs (or use placeholder)
     img_matches = re.findall(r'<img[^>]+src="([^"]+)"', clean_content)
     for idx, img_url in enumerate(img_matches):
         if img_url.startswith("https://graph.microsoft.com"):
-            local_img_path = download_image_from_src(img_url, access_token, image_folder, message_id, idx)
-            if local_img_path:
-                clean_content = clean_content.replace(img_url, local_img_path)
+            if download_images:
+                local_img_path = download_image_from_src(img_url, access_token, image_folder, message_id, idx)
+                if local_img_path:
+                    clean_content = clean_content.replace(img_url, local_img_path)
+            else:
+                # Replace with placeholder image
+                placeholder_url = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22150%22%3E%3Crect fill=%22%23e5e7eb%22 width=%22200%22 height=%22150%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-family=%22Arial%22 font-size=%2214%22 fill=%22%239ca3af%22%3EImage not downloaded%3C/text%3E%3Ctext x=%2250%25%22 y=%2265%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 font-family=%22Arial%22 font-size=%2212%22 fill=%22%23a8adb8%22%3E(disabled in config)%3C/text%3E%3C/svg%3E'
+                clean_content = clean_content.replace(img_url, placeholder_url)
 
     # Clean img tags and wrap with lightbox
     clean_content = clean_img_tags(clean_content)
@@ -342,6 +348,56 @@ def validate_message_content(msg):
         bool: True if message has text or images and is from a real user, False otherwise.
     """
     # Skip non-message types (system events, etc.)
+    msg_type = msg.get('messageType', '')
+    if msg_type != 'message':
+        return False
+    
+    # Check for content
+    body = msg.get('body') or {}
+    content = body.get('content') or ''
+    if not content.strip():
+        return False
+    
+    return True
+
+
+def is_message_in_date_range(message, date_from, date_to):
+    """
+    Check if a message's timestamp falls within the specified date range.
+    
+    Args:
+        message (dict): Message object from Teams API.
+        date_from (str or None): Start date in "YYYY-MM-DD" format, or None for no lower limit.
+        date_to (str or None): End date in "YYYY-MM-DD" format, or None for no upper limit.
+    
+    Returns:
+        bool: True if message is within date range (or if no range is specified), False otherwise.
+    """
+    # If no date range is specified, include the message
+    if not date_from and not date_to:
+        return True
+    
+    try:
+        # Extract message timestamp
+        timestamp_str = message.get('createdDateTime') or message.get('lastModifiedDateTime', '')
+        if not timestamp_str:
+            return False
+        
+        # Parse message date (format: "2024-01-15T10:30:45.123Z")
+        msg_date = timestamp_str.split('T')[0]  # Extract just the date part
+        
+        # Check lower bound
+        if date_from and msg_date < date_from:
+            return False
+        
+        # Check upper bound
+        if date_to and msg_date > date_to:
+            return False
+        
+        return True
+    except Exception as e:
+        print(f"Error checking message date range: {e}")
+        return True  # Include message if date parsing fails
     if msg.get('messageType') != 'message':
         return False
     
