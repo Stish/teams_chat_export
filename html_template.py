@@ -20,7 +20,7 @@ Structure:
 - HTML: Base structure with placeholders for dynamic content
 
 Author: Alexander Wegner
-Version: v0.1.6
+Version: v0.1.7
 Last Updated: 2026-01-12
 """
 
@@ -673,7 +673,10 @@ function showChat(id) {
         }
     });
     document.querySelectorAll('.chat-section').forEach(div => div.style.display = 'none');
-    document.getElementById(id).style.display = 'block';
+    const chatSection = document.getElementById(id);
+    if (chatSection) {
+        chatSection.style.display = 'block';
+    }
     
     // Update breadcrumb navigation
     updateBreadcrumb(id);
@@ -774,6 +777,30 @@ function toggleCodeFilter() {
 }
 
 /**
+ * Toggle URL filter
+ */
+function toggleUrlFilter() {
+    var urlOnlyCheckbox = document.getElementById('urlOnlyCheckbox');
+    var urlFilterBtn = document.getElementById('urlFilterBtn');
+    
+    urlOnlyCheckbox.checked = !urlOnlyCheckbox.checked;
+    
+    // Update button style
+    if (urlOnlyCheckbox.checked) {
+        urlFilterBtn.style.background = '#3b82f6';
+        urlFilterBtn.style.color = 'white';
+        urlFilterBtn.style.borderColor = '#3b82f6';
+    } else {
+        urlFilterBtn.style.background = 'var(--sidebar-hover)';
+        urlFilterBtn.style.color = 'var(--sidebar-text)';
+        urlFilterBtn.style.borderColor = 'var(--sidebar-border)';
+    }
+    
+    updateActiveFilters();
+    updateSearch();
+}
+
+/**
  * Update active filters display
  */
 function updateActiveFilters() {
@@ -787,6 +814,7 @@ function updateActiveFilters() {
     var senderInput = document.getElementById('senderFilterInput');
     var imageOnlyCheckbox = document.getElementById('imageOnlyCheckbox');
     var codeOnlyCheckbox = document.getElementById('codeOnlyCheckbox');
+    var urlOnlyCheckbox = document.getElementById('urlOnlyCheckbox');
     var dateFromInput = document.getElementById('dateFromInput');
     var dateToInput = document.getElementById('dateToInput');
     var dateRangeOnlyCheckbox = document.getElementById('dateRangeOnlyCheckbox');
@@ -802,6 +830,9 @@ function updateActiveFilters() {
     }
     if (codeOnlyCheckbox && codeOnlyCheckbox.checked) {
         filters.push({ text: '💻 Code only', type: 'code' });
+    }
+    if (urlOnlyCheckbox && urlOnlyCheckbox.checked) {
+        filters.push({ text: '🔗 URLs only', type: 'urls' });
     }
     // Only show date filters if the "Apply date filter" checkbox is checked
     if (dateRangeOnlyCheckbox && dateRangeOnlyCheckbox.checked) {
@@ -839,12 +870,15 @@ function clearAllFilters() {
     document.getElementById('imageOnlyCheckbox').checked = false;
     var codeOnlyCheckbox = document.getElementById('codeOnlyCheckbox');
     if (codeOnlyCheckbox) codeOnlyCheckbox.checked = false;
+    var urlOnlyCheckbox = document.getElementById('urlOnlyCheckbox');
+    if (urlOnlyCheckbox) urlOnlyCheckbox.checked = false;
     var dateRangeOnlyCheckbox = document.getElementById('dateRangeOnlyCheckbox');
     if (dateRangeOnlyCheckbox) dateRangeOnlyCheckbox.checked = false;
     
     // Reset button styles for quick filter tags
     var imageFilterBtn = document.getElementById('imageFilterBtn');
     var codeFilterBtn = document.getElementById('codeFilterBtn');
+    var urlFilterBtn = document.getElementById('urlFilterBtn');
     if (imageFilterBtn) {
         imageFilterBtn.style.background = 'var(--sidebar-hover)';
         imageFilterBtn.style.color = 'var(--sidebar-text)';
@@ -854,6 +888,11 @@ function clearAllFilters() {
         codeFilterBtn.style.background = 'var(--sidebar-hover)';
         codeFilterBtn.style.color = 'var(--sidebar-text)';
         codeFilterBtn.style.borderColor = 'var(--sidebar-border)';
+    }
+    if (urlFilterBtn) {
+        urlFilterBtn.style.background = 'var(--sidebar-hover)';
+        urlFilterBtn.style.color = 'var(--sidebar-text)';
+        urlFilterBtn.style.borderColor = 'var(--sidebar-border)';
     }
     
     updateActiveFilters();
@@ -970,12 +1009,14 @@ document.addEventListener("DOMContentLoaded", function() {
      * @param {HTMLElement} msg
      * @param {string} query
      * @param {boolean} imageOnly
+     * @param {boolean} codeOnly
+     * @param {boolean} urlOnly
      * @param {string} senderQuery
      * @param {Date|null} dateFrom
      * @param {Date|null} dateTo
      * @returns {boolean}
      */
-    function shouldShowMessage(msg, query, imageOnly, codeOnly, senderQuery, dateFrom, dateTo) {
+    function shouldShowMessage(msg, query, imageOnly, codeOnly, urlOnly, senderQuery, dateFrom, dateTo) {
         if (!msg.dataset.lowerText) {
             msg.dataset.lowerText = msg.innerText.toLowerCase();
         }
@@ -985,11 +1026,17 @@ document.addEventListener("DOMContentLoaded", function() {
         }
         const hasImg = messageHasImage(msg);
         const hasCode = msg.querySelector('code, pre') !== null;
+        // Check for actual URLs (http/https only, not relative file paths like "img/...")
+        const hasUrl = Array.from(msg.querySelectorAll('a[href]')).some(link => {
+            const href = link.getAttribute('href') || '';
+            return /^https?:\/\//.test(href);
+        }) || /https?:\/\//.test(msg.innerText);
         const matchText = msg.dataset.lowerText.includes(query);
         const senderOk = !senderQuery || msg.dataset.senderLower.includes(senderQuery);
         const textOk = (query === "") || matchText;
         const imageOk = !imageOnly || hasImg;
         const codeOk = !codeOnly || hasCode;
+        const urlOk = !urlOnly || hasUrl;
         
         // Date range filter
         let dateOk = true;
@@ -1018,7 +1065,7 @@ document.addEventListener("DOMContentLoaded", function() {
             }
         }
         
-        return textOk && imageOk && codeOk && senderOk && dateOk;
+        return textOk && imageOk && codeOk && urlOk && senderOk && dateOk;
     }
 
     /**
@@ -1029,6 +1076,7 @@ document.addEventListener("DOMContentLoaded", function() {
         const senderQuery = (senderInput ? senderInput.value.toLowerCase() : "");
         const imageOnly = imageOnlyCheckbox.checked;
         const codeOnly = codeOnlyCheckbox.checked;
+        const urlOnly = document.getElementById('urlOnlyCheckbox').checked;
         
         // Get date range values - only use them if checkbox is checked
         const dateFromInput = document.getElementById('dateFromInput');
@@ -1049,7 +1097,7 @@ document.addEventListener("DOMContentLoaded", function() {
         }
         const useDateFilter = isDateFilterChecked && (dateFrom !== null || dateTo !== null);
         
-        const isFiltering = query !== "" || imageOnly || codeOnly || senderQuery !== "" || useDateFilter;
+        const isFiltering = query !== "" || imageOnly || codeOnly || urlOnly || senderQuery !== "" || useDateFilter;
 
         /**
          * Process a specific chat section and update match counts
@@ -1076,41 +1124,57 @@ document.addEventListener("DOMContentLoaded", function() {
                     
                     let matchCount = 0;
 
-                    sectionDiv.querySelectorAll(".message").forEach(msg => {
-                        const show = shouldShowMessage(msg, query, imageOnly, codeOnly, senderQuery, dateFrom, dateTo);
-                        // Hide/show the message and its wrapper to fully remove from flow
-                        msg.style.display = show ? "block" : "none";
-                        const wrapper = msg.closest('.clearfix');
-                        if (wrapper) wrapper.style.display = show ? "" : "none";
-                        
-                        // Add sender-filtered class for highlighting when sender filter is active
-                        if (show && senderQuery && msg.dataset.senderLower.includes(senderQuery)) {
-                            msg.classList.add('sender-filtered');
-                        } else {
-                            msg.classList.remove('sender-filtered');
-                        }
-                        
-                        const target = msg.querySelector('.text') || msg;
-                        clearHighlights(target);
-                        if (show && query) {
-                            applyHighlights(target, query);
-                        }
-                        const meta = msg.querySelector('.meta');
-                        if (meta) {
-                            clearHighlights(meta);
-                            if (show && senderQuery) {
-                                applyHighlights(meta, senderQuery);
+                    if (isFiltering) {
+                        // Apply filters to messages
+                        sectionDiv.querySelectorAll(".message").forEach(msg => {
+                            const show = shouldShowMessage(msg, query, imageOnly, codeOnly, urlOnly, senderQuery, dateFrom, dateTo);
+                            // Hide/show the message and its wrapper to fully remove from flow
+                            msg.style.display = show ? "block" : "none";
+                            const wrapper = msg.closest('.clearfix');
+                            if (wrapper) wrapper.style.display = show ? "" : "none";
+                            
+                            // Add sender-filtered class for highlighting when sender filter is active
+                            if (show && senderQuery && msg.dataset.senderLower.includes(senderQuery)) {
+                                msg.classList.add('sender-filtered');
+                            } else {
+                                msg.classList.remove('sender-filtered');
                             }
-                        }
-                        if (show) matchCount++;
-                    });
+                            
+                            const target = msg.querySelector('.text') || msg;
+                            clearHighlights(target);
+                            if (show && query) {
+                                applyHighlights(target, query);
+                            }
+                            const meta = msg.querySelector('.meta');
+                            if (meta) {
+                                clearHighlights(meta);
+                                if (show && senderQuery) {
+                                    applyHighlights(meta, senderQuery);
+                                }
+                            }
+                            if (show) matchCount++;
+                        });
+                    } else {
+                        // Show all messages when not filtering
+                        const allMessages = sectionDiv.querySelectorAll(".message");
+                        matchCount = allMessages.length;
+                        allMessages.forEach(msg => {
+                            msg.style.display = "block";
+                            const wrapper = msg.closest('.clearfix');
+                            if (wrapper) wrapper.style.display = "";
+                            msg.classList.remove('sender-filtered');
+                            const target = msg.querySelector('.text') || msg;
+                            clearHighlights(target);
+                            const meta = msg.querySelector('.meta');
+                            if (meta) clearHighlights(meta);
+                        });
+                    }
 
-                    // Hide date separators that have no visible messages beneath them
-                    // Cache separator check results to avoid repeated DOM traversals
+                    // Handle date separators
                     const allSeparators = Array.from(sectionDiv.querySelectorAll('.date-separator'));
                     
-                    // Use requestAnimationFrame to batch DOM updates
-                    requestAnimationFrame(() => {
+                    if (isFiltering) {
+                        // Hide date separators that have no visible messages beneath them
                         allSeparators.forEach(sep => {
                             // Check if there are ANY visible messages after this separator (before the next separator)
                             let hasVisibleAfter = false;
@@ -1139,7 +1203,12 @@ document.addEventListener("DOMContentLoaded", function() {
                             // Show separator only if there's at least one visible message after it
                             sep.style.display = hasVisibleAfter ? "" : "none";
                         });
-                    });
+                    } else {
+                        // Show all separators when not filtering
+                        allSeparators.forEach(sep => {
+                            sep.style.display = "";
+                        });
+                    }
 
                     if (isFiltering) {
                         // When filtering is active, show filtered count or hide
@@ -1242,29 +1311,46 @@ document.addEventListener("DOMContentLoaded", function() {
                 let matchCount = 0;
 
                 if (sectionDiv) {
-                    sectionDiv.querySelectorAll(".message").forEach(msg => {
-                        const show = shouldShowMessage(msg, query, imageOnly, codeOnly, senderQuery, dateFrom, dateTo);
-                        // Hide/show the message and its wrapper to fully remove from flow
-                        msg.style.display = show ? "block" : "none";
-                        const wrapper = msg.closest('.clearfix');
-                        if (wrapper) wrapper.style.display = show ? "" : "none";
-                        const target = msg.querySelector('.text') || msg;
-                        clearHighlights(target);
-                        if (show && query) {
-                            applyHighlights(target, query);
-                        }
-                        const meta = msg.querySelector('.meta');
-                        if (meta) {
-                            clearHighlights(meta);
-                            if (show && senderQuery) {
-                                applyHighlights(meta, senderQuery);
+                    if (isFiltering) {
+                        // Apply filters to messages
+                        sectionDiv.querySelectorAll(".message").forEach(msg => {
+                            const show = shouldShowMessage(msg, query, imageOnly, codeOnly, urlOnly, senderQuery, dateFrom, dateTo);
+                            // Hide/show the message and its wrapper to fully remove from flow
+                            msg.style.display = show ? "block" : "none";
+                            const wrapper = msg.closest('.clearfix');
+                            if (wrapper) wrapper.style.display = show ? "" : "none";
+                            const target = msg.querySelector('.text') || msg;
+                            clearHighlights(target);
+                            if (show && query) {
+                                applyHighlights(target, query);
                             }
-                        }
-                        if (show) matchCount++;
-                    });
-                    // Hide date separators that have no visible messages beneath them
+                            const meta = msg.querySelector('.meta');
+                            if (meta) {
+                                clearHighlights(meta);
+                                if (show && senderQuery) {
+                                    applyHighlights(meta, senderQuery);
+                                }
+                            }
+                            if (show) matchCount++;
+                        });
+                    } else {
+                        // Show all messages when not filtering
+                        const allMessages = sectionDiv.querySelectorAll(".message");
+                        matchCount = allMessages.length;
+                        allMessages.forEach(msg => {
+                            msg.style.display = "block";
+                            const wrapper = msg.closest('.clearfix');
+                            if (wrapper) wrapper.style.display = "";
+                            const target = msg.querySelector('.text') || msg;
+                            clearHighlights(target);
+                            const meta = msg.querySelector('.meta');
+                            if (meta) clearHighlights(meta);
+                        });
+                    }
+                    // Handle date separators
                     const channelSeparators = Array.from(sectionDiv.querySelectorAll('.date-separator'));
-                    requestAnimationFrame(() => {
+                    if (isFiltering) {
+                        // Hide date separators that have no visible messages beneath them
                         channelSeparators.forEach(sep => {
                             let hasVisibleAfter = false;
                             let node = sep.nextElementSibling;
@@ -1281,7 +1367,12 @@ document.addEventListener("DOMContentLoaded", function() {
                             }
                             sep.style.display = hasVisibleAfter ? "" : "none";
                         });
-                    });
+                    } else {
+                        // Show all separators when not filtering
+                        channelSeparators.forEach(sep => {
+                            sep.style.display = "";
+                        });
+                    }
                 }
 
                 if (isFiltering) {
@@ -1435,6 +1526,7 @@ document.addEventListener("DOMContentLoaded", function() {
         const senderQuery = (senderInput ? senderInput.value.toLowerCase() : "");
         const imageOnly = imageOnlyCheckbox.checked;
         const codeOnly = codeOnlyCheckbox.checked;
+        const urlOnly = document.getElementById('urlOnlyCheckbox') ? document.getElementById('urlOnlyCheckbox').checked : false;
         
         // Get date range values
         const dateFromInput = document.getElementById('dateFromInput');
@@ -1447,7 +1539,7 @@ document.addEventListener("DOMContentLoaded", function() {
         const dateTo = useDateFilter ? rawDateTo : null;
         
         section.querySelectorAll(".message").forEach(msg => {
-            const show = shouldShowMessage(msg, query, imageOnly, codeOnly, senderQuery, dateFrom, dateTo);
+            const show = shouldShowMessage(msg, query, imageOnly, codeOnly, urlOnly, senderQuery, dateFrom, dateTo);
             msg.style.display = show ? "block" : "none";
             const target = msg.querySelector('.text') || msg;
             clearHighlights(target);
@@ -2147,11 +2239,13 @@ document.addEventListener("DOMContentLoaded", function() {
   <!-- Hidden checkboxes for filter state -->
   <input type="checkbox" id="imageOnlyCheckbox" style="display: none;">
   <input type="checkbox" id="codeOnlyCheckbox" style="display: none;">
+  <input type="checkbox" id="urlOnlyCheckbox" style="display: none;">
   
   <!-- Quick Filters Row -->
   <div style="display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap;">
     <button id="imageFilterBtn" class="quick-filter-tag" onclick="toggleImageFilter()" style="padding: 6px 12px; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); border-radius: 20px; color: var(--sidebar-text); cursor: pointer; font-size: 0.85em; transition: all 0.2s;" title="Show only messages with images">🖼️ Images</button>
     <button id="codeFilterBtn" class="quick-filter-tag" onclick="toggleCodeFilter()" style="padding: 6px 12px; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); border-radius: 20px; color: var(--sidebar-text); cursor: pointer; font-size: 0.85em; transition: all 0.2s;" title="Show only messages with code blocks">💻 Code</button>
+    <button id="urlFilterBtn" class="quick-filter-tag" onclick="toggleUrlFilter()" style="padding: 6px 12px; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); border-radius: 20px; color: var(--sidebar-text); cursor: pointer; font-size: 0.85em; transition: all 0.2s;" title="Show only messages with URLs">🔗 URLs</button>
   </div>
   
   <!-- Active Filters Display -->

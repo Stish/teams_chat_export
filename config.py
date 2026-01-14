@@ -5,7 +5,7 @@ This file contains all configuration parameters and constants used by the Teams 
 Modify these values according to your needs.
 
 Author: Alexander Wegner
-Version: v0.1.6
+Version: v0.1.7
 """
 
 # =============================================================================
@@ -40,7 +40,7 @@ DOWNLOAD_IMAGES = True
 # =============================================================================
 
 # Script version
-SCRIPT_VERSION = 'v0.1.6'
+SCRIPT_VERSION = 'v0.1.7'
 
 # =============================================================================
 # API CONFIGURATION
@@ -99,7 +99,7 @@ CHATS_LIMIT = None  # Examples: 5, 10, 20, or None for unlimited
 # Limit the number of channels to process per team (None = no limit)
 # For quick testing you can set a small number (e.g., 3 or 5)
 # If left as None, the script will fall back to CHATS_LIMIT when set
-CHANNELS_LIMIT_PER_TEAM = None # Examples: 3, 5, 10, or None for unlimited
+CHANNELS_LIMIT_PER_TEAM = None  # Examples: 3, 5, 10, or None for unlimited
 
 # =============================================================================
 # MESSAGE DATE RANGE CONFIGURATION
@@ -115,8 +115,8 @@ CHANNELS_LIMIT_PER_TEAM = None # Examples: 3, 5, 10, or None for unlimited
 # - Only MESSAGE_DATE_TO set: All messages up to and including this date will be exported
 # - Both None: No date filtering, all messages exported (default)
 #
-MESSAGE_DATE_FROM = "2025-01-01" # e.g., "2024-01-15" or None for no lower limit
-MESSAGE_DATE_TO = "2025-12-31" # e.g., "2024-12-31" or None for no upper limit
+MESSAGE_DATE_FROM = None # e.g., "2024-01-15" or None for no lower limit
+MESSAGE_DATE_TO = None # e.g., "2024-12-31" or None for no upper limit
 # IGNORE LIST CONFIGURATION
 # =============================================================================
 

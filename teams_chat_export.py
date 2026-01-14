@@ -22,7 +22,7 @@ Usage:
     python teams_chat_export.py
 
 Author: Alexander Wegner
-Version: v0.1.6
+Version: v0.1.7
 """
 
 import os

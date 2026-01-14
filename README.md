@@ -260,7 +260,7 @@ CHANNELS_LIMIT_PER_TEAM = None  # Examples: 3, 5, 10, or None for unlimited
 
 ```
 ### Microsoft Teams Chat Export Started
-Script Version: v0.1.6
+Script Version: v0.1.7
 ✅ Fetched user display name: Your Name
 ✅ Access token valid - authenticated as: Your Name
 ##  Fetching all chats
@@ -358,7 +358,8 @@ The HTML export includes advanced search capabilities:
 - **Real-time Search**: Filter messages by text across all conversations
 - **Sender Filter**: Filter messages by sender name substring across all conversations
 - **Image-only Filter**: Toggle to show only messages containing images
-- **Combined Filtering**: Search and image filter work together (AND logic)
+- **URL Filter**: Quick filter option to show only messages containing URLs
+- **Combined Filtering**: Search and filters work together (AND logic)
 - **Live Message Counts**: See message counts update as you filter
 - **Smart Visibility**: Chats/channels with no matches automatically hide while filtering
 - **Consistent Behavior**: All chat types (1-on-1, group, meetings, channels) support unified filtering
