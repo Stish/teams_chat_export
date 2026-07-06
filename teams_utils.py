@@ -5,7 +5,7 @@ This module contains utility functions for processing Microsoft Teams chat expor
 including message processing, image handling, and API interactions.
 
 Author: Alexander Wegner
-Version: v0.1.7
+Version: v0.1.8
 """
 
 
@@ -86,7 +86,7 @@ def download_image_from_src(src_url, token, folder, message_id, index):
             print(f"Error downloading image {src_url}: {e}")
             return None
     
-    return os.path.relpath(local_path, start=os.path.dirname('index.html')).replace('\\', '/')
+    return os.path.relpath(local_path, start=os.path.join(os.path.dirname('index.html'), 'chats')).replace('\\', '/')
 
 
 def clean_img_tags(content):

@@ -1,6 +1,6 @@
 # Microsoft Teams Chat Export
 
-A Python script that exports Microsoft Teams chats, group conversations, meetings, and channel messages to a single, searchable HTML file with embedded images and intuitive navigation.
+A Python script that exports Microsoft Teams chats, group conversations, meetings, and channel messages to a multi-file local web app with searchable content, embedded images, and intuitive navigation.
 
 ## 📋 Table of Contents
 
@@ -21,8 +21,8 @@ A Python script that exports Microsoft Teams chats, group conversations, meeting
 ### Core Functionality
 - **Complete Export**: Exports all one-on-one chats, group chats, meeting chats, and team channel messages
 - **Image Support**: Downloads and embeds images locally for offline viewing
-- **HTML Output**: Generates a single, self-contained HTML file with all your Teams data
-- **Search Functionality**: Built-in search across all messages and conversations
+- **HTML Output**: Generates a lightweight multi-file export (`index.html`, `stats.html`, `chats/*.html`, shared assets)
+- **Search Functionality**: Built-in cross-chat search with local/offline support
 - **Responsive Design**: Works on desktop and mobile devices
 
 ### User Experience
@@ -38,6 +38,8 @@ A Python script that exports Microsoft Teams chats, group conversations, meeting
 ### Advanced Features
 
 ### What’s New (UI/UX)
+- **Multi-File Export (v0.1.8)**: Chats/channels are exported as separate files to keep navigation responsive.
+- **Local Search Reliability**: Search index is embedded for `file://` usage, so filtering works without a local web server.
 - **Filter Panel Redesign**: Collapsible advanced filters with quick tags for Images and Code, active filter chips, and a Clear All button.
 - **Smarter Filtering**: Hides chats/channels and date separators with zero matches during filtering; restores original counts when cleared.
 - **State Preservation**: Keeps your expanded/collapsed sidebar state intact when applying/clearing filters; Home collapses everything consistently.
@@ -260,7 +262,7 @@ CHANNELS_LIMIT_PER_TEAM = None  # Examples: 3, 5, 10, or None for unlimited
 
 ```
 ### Microsoft Teams Chat Export Started
-Script Version: v0.1.7
+Script Version: v0.1.8
 ✅ Fetched user display name: Your Name
 ✅ Access token valid - authenticated as: Your Name
 ##  Fetching all chats
@@ -273,10 +275,12 @@ Processed 3 meeting chats
 ##  Fetching teams and channels
 #   Processing team: Development Team
 #     Processing channel: General...(156 total, 142 with content)
-##  Generating HTML export
+##  Generating multi-file SPA export
 ##  Processing chat messages
 #   Fetching messages for chat: Chat with John Doe...(89 messages)
-✅ Successfully exported to 'C:\path\to\output\index.html'
+✅ Created C:\path\to\output\index.html
+✅ Created C:\path\to\output\stats.html
+✅ Created C:\path\to\output\assets\search-index.json
 ### Export completed successfully!
 ```
 
@@ -303,17 +307,25 @@ The script creates the following structure in your output folder:
 
 ```
 output/
-├── index.html           # Main export file (open this in browser)
-├── img/                # Downloaded images folder
-│   ├── image1.jpg
-│   ├── image2.png
+├── index.html             # Main navigation page
+├── stats.html             # Statistics/cover page
+├── chats/                 # Per-chat and per-channel pages
+│   ├── <chat-id>.html
 │   └── ...
+├── assets/
+│   ├── style.css
+│   ├── script.js
+│   └── search-index.json
+└── img/                   # Downloaded images
+    ├── image1.jpg
+    ├── image2.png
+    └── ...
 ```
 
 ### HTML File Features
 
-- **Self-contained**: All CSS and JavaScript embedded
-- **Offline viewing**: Images stored locally
+- **Local-first**: Works directly via `file://` (no web server required)
+- **Scalable**: Per-chat files avoid huge single-HTML outputs
 - **Responsive**: Works on all screen sizes
 - **Searchable**: Real-time message filtering
 - **Navigable**: Sidebar with expandable sections
@@ -455,7 +467,7 @@ This project is provided as-is for educational and personal use. Please ensure y
 
 ---
 
-**Version**: v0.1.5.1
-**Last Updated**: January 2026  
+**Version**: v0.1.8
+**Last Updated**: July 2026  
 **Tested with**: Microsoft Teams Web, Desktop App  
 **Python Compatibility**: 3.6+

@@ -20,7 +20,7 @@ Structure:
 - HTML: Base structure with placeholders for dynamic content
 
 Author: Alexander Wegner
-Version: v0.1.7
+Version: v0.1.8
 Last Updated: 2026-01-12
 """
 

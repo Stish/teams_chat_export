@@ -5,7 +5,7 @@ This file contains all configuration parameters and constants used by the Teams 
 Modify these values according to your needs.
 
 Author: Alexander Wegner
-Version: v0.1.7
+Version: v0.1.8
 """
 
 # =============================================================================
@@ -14,7 +14,7 @@ Version: v0.1.7
 
 # Microsoft Graph API access token
 # Replace with your actual token from Graph Explorer or Azure AD app registration
-ACCESS_TOKEN = 'YOUR_ACCESS_TOKEN_HERE'
+ACCESS_TOKEN = '<YOUR_ACCESS_TOKEN_HERE>'
 
 # User display name will be automatically fetched from Microsoft Graph API
 # No need to manually configure this - it will be determined from the access token
@@ -40,7 +40,7 @@ DOWNLOAD_IMAGES = True
 # =============================================================================
 
 # Script version
-SCRIPT_VERSION = 'v0.1.7'
+SCRIPT_VERSION = 'v0.1.8'
 
 # =============================================================================
 # API CONFIGURATION
